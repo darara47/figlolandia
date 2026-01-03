@@ -1,0 +1,14 @@
+{
+  "name": "figlolandia",
+  "version": "1.0.0",
+  "private": true,
+  "author": "",
+  "license": "ISC",
+  "scripts": {
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build",
+    "fe": "pnpm --filter ./apps/frontend start",
+    "be": "pnpm --filter ./apps/backend start"
+  },
+  "packageManager": "pnpm@10.27.0"
+}
