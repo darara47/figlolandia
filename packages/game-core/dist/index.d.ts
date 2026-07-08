@@ -64,6 +64,7 @@ export interface PlayerAction {
     theftTarget?: 'gold' | 'card';
     inspectTarget?: string;
     taxedCategory?: BuildingCategory;
+    plannedProfession?: Profession;
 }
 export type ActionType = 'build' | 'use_profession' | 'pass';
 export declare const BUILDING_DATA: Record<BuildingType, {

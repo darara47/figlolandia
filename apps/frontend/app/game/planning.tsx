@@ -198,6 +198,8 @@ export default function PlanningScreen() {
     setSelectedCards(new Set());
   };
 
+  const SKIP_TARGET = '__skip__';
+
   const handleConfirmProfessionAbility = () => {
     if (!gameId) return;
     if (!playerId) return;
@@ -206,30 +208,19 @@ export default function PlanningScreen() {
     if (professionRequiresPlayerTarget && !selectedProfessionTargetId) return;
     if (professionRequiresCategory && !selectedTaxCategory) return;
 
-    confirmAbility({
-      gameId,
-      abilityAction: {
-        type: 'use_profession',
-        professionAbility: true,
-        target: professionRequiresPlayerTarget ? selectedProfessionTargetId ?? undefined : undefined,
-        theftTarget: me?.profession === 'thief' ? thiefTheftTarget : undefined,
-        taxedCategory: professionRequiresCategory ? selectedTaxCategory ?? undefined : undefined,
-      },
-    });
-    setLocalAbilitySubmitted(true);
-  };
-
-  const handleSkipAbility = () => {
-    if (!gameId) return;
-    if (!playerId) return;
-    if (!canAbilityInteract) return;
+    const isSkip = selectedProfessionTargetId === SKIP_TARGET;
 
     confirmAbility({
       gameId,
-      abilityAction: {
-        type: 'use_profession',
-        professionAbility: false,
-      },
+      abilityAction: isSkip
+        ? { type: 'use_profession', professionAbility: false }
+        : {
+          type: 'use_profession',
+          professionAbility: true,
+          target: professionRequiresPlayerTarget ? selectedProfessionTargetId ?? undefined : undefined,
+          theftTarget: me?.profession === 'thief' ? thiefTheftTarget : undefined,
+          taxedCategory: professionRequiresCategory ? selectedTaxCategory ?? undefined : undefined,
+        },
     });
     setLocalAbilitySubmitted(true);
   };
@@ -425,16 +416,16 @@ export default function PlanningScreen() {
                                 );
                               })}
                               <Pressable
-                                disabled={!canAbilityInteract || localAbilitySubmitted}
+                                disabled={!canAbilityInteract}
                                 onPress={
-                                  canAbilityInteract && !localAbilitySubmitted
-                                    ? handleSkipAbility
+                                  canAbilityInteract
+                                    ? () => setSelectedProfessionTargetId(SKIP_TARGET)
                                     : undefined
                                 }
                                 style={[
                                   styles.targetButton,
                                   styles.skipAbilityButton,
-                                  (!canAbilityInteract || localAbilitySubmitted) && styles.targetButtonDisabled,
+                                  selectedProfessionTargetId === SKIP_TARGET && styles.targetButtonSelected,
                                 ]}
                               >
                                 <Text style={styles.targetButtonText}>Pomiń</Text>

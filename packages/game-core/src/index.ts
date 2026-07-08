@@ -142,6 +142,7 @@ export interface PlayerAction {
   theftTarget?: 'gold' | 'card'; // dla Złodzieja
   inspectTarget?: string; // dla Szpiega
   taxedCategory?: BuildingCategory; // dla Polityka - kategoria opodatkowana
+  plannedProfession?: Profession; // zawód z rundy planowania (dla odłożonych budów Inspektora)
 }
 
 export type ActionType =
@@ -650,7 +651,12 @@ export class RoundEngine {
         .slice(0, maxBuildings);
 
       if (player.delayedBuildings) {
-        player.deferredBuildActions.push(...buildActions);
+        player.deferredBuildActions.push(
+          ...buildActions.map((action) => ({
+            ...action,
+            plannedProfession: player.profession ?? undefined,
+          })),
+        );
         ResolutionDebug.log(
           'RESOLUTION',
           'build.delayed',
@@ -706,9 +712,11 @@ export class RoundEngine {
         buildAction.buildingValue ||
         (card ? card.buildingValue : null) ||
         buildingData.valueRange[0];
+      const buildProfession =
+        buildAction.plannedProfession ?? player.profession;
       let cost = baseValue;
 
-      if (player.profession === 'opportunity_hunter') {
+      if (buildProfession === 'opportunity_hunter') {
         cost = Math.max(0, cost - 2);
       }
 
@@ -721,7 +729,7 @@ export class RoundEngine {
           'RESOLUTION',
           'build.skip',
           skipMessage,
-          { source, baseValue, cost, profession: player.profession },
+          { source, baseValue, cost, profession: buildProfession },
         );
         continue;
       }
@@ -738,7 +746,8 @@ export class RoundEngine {
           buildingType: buildAction.buildingType,
           baseValue,
           cost,
-          opportunityHunter: player.profession === 'opportunity_hunter',
+          opportunityHunter: buildProfession === 'opportunity_hunter',
+          plannedProfession: buildAction.plannedProfession,
         },
       );
 

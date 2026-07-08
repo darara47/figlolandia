@@ -326,7 +326,10 @@ class RoundEngine {
                 .filter((a) => a.type === 'build')
                 .slice(0, maxBuildings);
             if (player.delayedBuildings) {
-                player.deferredBuildActions.push(...buildActions);
+                player.deferredBuildActions.push(...buildActions.map((action) => ({
+                    ...action,
+                    plannedProfession: player.profession ?? undefined,
+                })));
                 resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.delayed', `${player.name}: opóźniono ${buildActions.length} budów (Inspektor) → deferredBuildActions`, { actions: buildActions });
                 continue;
             }
@@ -360,15 +363,16 @@ class RoundEngine {
             const baseValue = buildAction.buildingValue ||
                 (card ? card.buildingValue : null) ||
                 buildingData.valueRange[0];
+            const buildProfession = buildAction.plannedProfession ?? player.profession;
             let cost = baseValue;
-            if (player.profession === 'opportunity_hunter') {
+            if (buildProfession === 'opportunity_hunter') {
                 cost = Math.max(0, cost - 2);
             }
             if (player.gold < cost) {
                 const skipMessage = `[RoundEngine] Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
                     `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
                 console.warn(skipMessage);
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.skip', skipMessage, { source, baseValue, cost, profession: player.profession });
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.skip', skipMessage, { source, baseValue, cost, profession: buildProfession });
                 continue;
             }
             const goldBefore = player.gold;
@@ -377,7 +381,8 @@ class RoundEngine {
                 buildingType: buildAction.buildingType,
                 baseValue,
                 cost,
-                opportunityHunter: player.profession === 'opportunity_hunter',
+                opportunityHunter: buildProfession === 'opportunity_hunter',
+                plannedProfession: buildAction.plannedProfession,
             });
             let buildingValue = baseValue;
             if (player.urbanistPendingBuildBoost && player.buildingsBuiltThisRound === 0) {

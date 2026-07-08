@@ -15,7 +15,11 @@ Nie wymaga osobnej akcji zdolności — efekt stosuje się automatycznie przy bu
 
 Budynek o wartości 4 kosztuje 2 złota zamiast 4.
 
+## Odłożone budowy (Inspektor)
+
+Rabat liczy się według zawodu z **rundy planowania**, nie z rundy wykonania. Przy opóźnieniu budowy zapisywane jest `plannedProfession` na akcji `build`.
+
 ## Implementacja
 
-- `RoundEngine.resolveBuildings()` — obniżenie `cost` gdy `profession === 'opportunity_hunter'`
+- `RoundEngine.resolveBuildings()` — obniżenie `cost` gdy `plannedProfession ?? profession === 'opportunity_hunter'`
 - W PREP: dodatkowy efekt przy losowaniu zdarzeń (`narrative.service.ts`)

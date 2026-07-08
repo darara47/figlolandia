@@ -57,7 +57,7 @@ Nie działa na chronionych.
 
 ### 5. Budowy (`resolveBuildings`)
 
-1. Wykonaj `deferredBuildActions` z poprzedniej rundy (Inspektor).
+1. Wykonaj `deferredBuildActions` z poprzedniej rundy (Inspektor). Koszt budowy (np. rabat Łowcy okazji) liczy się według `plannedProfession` zapisanej przy odkładaniu.
 2. Dla każdego gracza (w kolejności `order`):
    - Jeśli `delayedBuildings` — przenieś akcje `build` do `deferredBuildActions` i pomiń w bieżącej rundzie.
    - Wykonaj akcje `build` (max 1, Budowlaniec: 2).
