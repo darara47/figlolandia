@@ -1,0 +1,19 @@
+---
+description: In development, no need to maintain legacy versions
+alwaysApply: true
+---
+
+# Development Mode: Break Compatibility Is OK
+
+This application is in active development and has no public/stable release to support.
+So you do not need to keep backwards compatibility or maintain an earlier version.
+
+- Prefer removing legacy/compatibility code over keeping shims.
+- When you change shared contracts (API/WebSocket/types), update all in-repo consumers together.
+- Do not add versioned endpoints/events (`v1/v2`, `old/new`) unless the user explicitly asks for it.
+- Keep refactors moving fast: correctness and internal consistency are the priority.
+
+## Examples
+
+- ❌ Bad: implement `wsEventV1` just to support older clients.
+- ✅ Good: update the single `wsEvent` contract on both server and client, and adjust callers/tests in-repo.

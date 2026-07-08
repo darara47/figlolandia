@@ -3,6 +3,7 @@ import { View, Text, ScrollView, Alert, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSocketStore } from '@/src/store/socket.store';
 import { useLobbyStore } from '@/src/store/lobby.store';
+import { useGameStore } from '@/src/store/game.store';
 import { api } from '@/src/services/api';
 import { Button } from '@/src/components/ui/Button';
 import { Input } from '@/src/components/ui/Input';
@@ -15,8 +16,18 @@ export default function HomeScreen() {
   const [gamePin, setGamePin] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { connect, isConnected, isConnecting } = useSocketStore();
-  const { setGame } = useLobbyStore();
+  const { isConnected, isConnecting, disconnect, setEventHandlers } = useSocketStore();
+  const { setGame, reset: resetLobby } = useLobbyStore();
+  const { reset: resetGame } = useGameStore();
+
+  // Powrót do głównego menu powinien czyścić stan klienta i “stare” eventy,
+  // żeby nie wylądować w poprzedniej grze.
+  useEffect(() => {
+    setEventHandlers({});
+    disconnect();
+    resetLobby();
+    resetGame();
+  }, [disconnect, resetGame, resetLobby, setEventHandlers]);
 
   // NIE łączymy się automatycznie - tylko po dołączeniu do gry w lobby
 

@@ -79,6 +79,7 @@ export interface Player {
   cards: Card[];
   profession: Profession | null;
   lastProfession: Profession | null; // dla losowania bez powtórzeń
+  joinOrder: number; // stała kolejność dołączenia do sesji (niezmienna w trakcie gry)
   order: number; // kolejność w rundzie
   professionAbilityUsed: boolean; // czy zdolność zawodowa została użyta w tej rundzie
   protected: boolean; // czy gracz jest chroniony (Dyplomata)
@@ -124,6 +125,7 @@ export interface GameState {
   pendingActions: Map<string, PlayerAction[]>; // playerId -> actions
   cheaperCategory?: BuildingCategory; // kategoria tańsza o 1 (Polityk)
   spiedHands?: Map<string, Card[]>; // playerId -> cards peeked by spy (temporary, cleared after resolution)
+  planningPhaseStartTime?: number; // timestamp startu fazy PLANNING (ustawiany raz na rundę)
 }
 
 // Player Actions
@@ -484,7 +486,11 @@ export class RoundEngine {
       if (player.delayedBuildings) continue;
 
       const playerActions = actions.get(player.id) || [];
-      const buildActions = playerActions.filter((a) => a.type === 'build');
+      // Limit budynków na rundę: Budowlaniec może wybudować +1 (2), pozostali 1.
+      const maxBuildings = player.profession === 'builder' ? 2 : 1;
+      const buildActions = playerActions
+        .filter((a) => a.type === 'build')
+        .slice(0, maxBuildings);
 
       for (const buildAction of buildActions) {
         if (!buildAction.buildingType) continue;
@@ -512,8 +518,17 @@ export class RoundEngine {
           cost = Math.max(1, cost - 2);
         }
 
-        // Sprawdź czy gracz ma wystarczająco złota
-        if (player.gold >= cost) {
+        // Sprawdź czy gracz ma wystarczająco złota.
+        // Fallback: jeśli gracza nie stać, budowa jest pomijana, a informacja trafia do logów.
+        if (player.gold < cost) {
+          console.warn(
+            `[RoundEngine] Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
+            `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`
+          );
+          continue;
+        }
+
+        {
           player.gold -= cost;
           const buildingId = `building-${Date.now()}-${Math.random()}`;
           let buildingValue = cost; // wartość = koszt budowy

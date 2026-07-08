@@ -29,7 +29,10 @@ export default function GameScreen() {
         }
       },
     });
-  }, [gameId, playerId]);
+    return () => {
+      setEventHandlers({});
+    };
+  }, [gameId, playerId, setEventHandlers]);
 
   // Renderuj odpowiedni ekran w zależności od fazy
   const renderScreen = () => {

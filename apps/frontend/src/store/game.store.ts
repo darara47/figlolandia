@@ -24,6 +24,7 @@ interface GameStore {
   me: PlayerDto | null;
   pendingActions: PlayerAction[];
   submittedPlayers: Set<string>; // Set ID graczy, którzy zatwierdzili swoje ruchy
+  planningStatus: Record<string, { buildConfirmed: boolean; abilityConfirmed: boolean }>;
   planningPhaseStartTime: number | null; // Timestamp rozpoczęcia fazy PLANNING
   winner: string | null;
   narrativeLog: NarrativeEvent[]; // Pełna historia logów narratora
@@ -50,6 +51,7 @@ export const useGameStore = create<GameStore>((set) => ({
   me: null,
   pendingActions: [],
   submittedPlayers: new Set<string>(),
+  planningStatus: {},
   planningPhaseStartTime: null,
   winner: null,
   narrativeLog: [],
@@ -61,16 +63,22 @@ export const useGameStore = create<GameStore>((set) => ({
   },
 
   updateFromServer: (payload, playerId) => {
-    const me = payload.players.find((p) => p.id === playerId) || null;
+    const sortedPlayers = [...payload.players].sort(
+      (a, b) =>
+        (a.joinOrder ?? Number.MAX_SAFE_INTEGER) -
+        (b.joinOrder ?? Number.MAX_SAFE_INTEGER),
+    );
+    const me = sortedPlayers.find((p) => p.id === playerId) || null;
 
     set((state) => ({
       gameId: payload.gameId,
       phase: payload.phase,
       round: payload.round,
-      players: payload.players,
+      players: sortedPlayers,
       me,
       winner: payload.winner,
       submittedPlayers: new Set(payload.submittedPlayers || []),
+      planningStatus: payload.planningStatus || {},
       planningPhaseStartTime: payload.planningPhaseStartTime || null,
       narrativeLog: mergeNarrativeEvents(state.narrativeLog, payload.narrativeEvents),
       narrativeEvents:
@@ -110,6 +118,7 @@ export const useGameStore = create<GameStore>((set) => ({
       me: null,
       pendingActions: [],
       submittedPlayers: new Set<string>(),
+      planningStatus: {},
       planningPhaseStartTime: null,
       winner: null,
       narrativeLog: [],

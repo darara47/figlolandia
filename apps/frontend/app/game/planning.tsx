@@ -11,18 +11,75 @@ import { PROFESSION_DATA } from '@figlolandia/game-core';
 import { CardDto } from '@/src/types/api';
 
 export default function PlanningScreen() {
-  const { gameId, phase, round, players, me, pendingActions, submittedPlayers, planningPhaseStartTime, addAction, clearActions } = useGameStore();
+  const {
+    gameId,
+    phase,
+    round,
+    players,
+    me,
+    submittedPlayers,
+    planningStatus,
+    planningPhaseStartTime,
+  } = useGameStore();
   const { playerId } = useLobbyStore();
-  const { submitActions } = useSocketStore();
+  const { confirmBuild, confirmAbility } = useSocketStore();
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [handExpanded, setHandExpanded] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
-  const [professionAbilityUsed, setProfessionAbilityUsed] = useState(false);
+  const [selectedProfessionTargetId, setSelectedProfessionTargetId] = useState<string | null>(null);
+  const [thiefTheftTarget, setThiefTheftTarget] = useState<'gold' | 'card'>('gold');
   const [timeRemaining, setTimeRemaining] = useState<number>(600000); // 10 minut w milisekundach
+
+  const myPlanningStatus = playerId ? planningStatus[playerId] : undefined;
+  const serverBuildConfirmed = !!myPlanningStatus?.buildConfirmed;
+  const serverAbilityConfirmed = !!myPlanningStatus?.abilityConfirmed;
+
+  // Flagi "in-flight": służą wyłącznie do zablokowania przycisku zaraz po kliknięciu
+  // (zanim serwer odeśle potwierdzenie), aby uniknąć podwójnego wysłania.
+  // Źródłem prawdy o potwierdzeniu ("Gotowy", ✓) jest ZAWSZE serwer.
+  const [localBuildSubmitted, setLocalBuildSubmitted] = useState(false);
+  const [localAbilitySubmitted, setLocalAbilitySubmitted] = useState(false);
+
+  // Gdy serwer cofnie potwierdzenie (np. nowa runda / reset kroków), zdejmij lokalną blokadę.
+  useEffect(() => {
+    if (!serverBuildConfirmed) setLocalBuildSubmitted(false);
+  }, [serverBuildConfirmed]);
+
+  useEffect(() => {
+    if (!serverAbilityConfirmed) setLocalAbilitySubmitted(false);
+  }, [serverAbilityConfirmed]);
+
+  // Na zmianie rundy czyścimy lokalne wybory i blokady (nowy zawód, nowe karty, nowe cele).
+  useEffect(() => {
+    setSelectedCards(new Set());
+    setSelectedProfessionTargetId(null);
+    setThiefTheftTarget('gold');
+    setLocalBuildSubmitted(false);
+    setLocalAbilitySubmitted(false);
+  }, [round]);
 
   const professionData = me?.profession
     ? PROFESSION_DATA[me.profession as keyof typeof PROFESSION_DATA]
     : null;
+
+  // Gating i wyświetlanie ✓ bazują wyłącznie na stanie serwera, więc lokalna
+  // flaga nie może zablokować gracza ani pokazać fałszywego potwierdzenia.
+  const canBuildInteract = phase === 'PLANNING' && !serverBuildConfirmed;
+  const canAbilityInteract = phase === 'PLANNING' && !serverAbilityConfirmed;
+
+  // Limit budynków na rundę: Budowlaniec może wybudować +1 (2), pozostali 1.
+  const maxBuildings = me?.profession === 'builder' ? 2 : 1;
+
+  const professionRequiresPlayerTarget = (() => {
+    const p = me?.profession;
+    if (!p) return false;
+    return p === 'saboteur' || p === 'vandal' || p === 'thief' || p === 'inspector' || p === 'spy';
+  })();
+
+  const canConfirmProfessionAbility =
+    canAbilityInteract &&
+    professionRequiresPlayerTarget &&
+    !!playerId &&
+    !!selectedProfessionTargetId;
 
   // Timer dla fazy PLANNING
   useEffect(() => {
@@ -55,80 +112,125 @@ export default function PlanningScreen() {
   };
 
   const handleCardSelect = (cardId: string) => {
+    if (!canBuildInteract) return;
     const newSelected = new Set(selectedCards);
     if (newSelected.has(cardId)) {
       newSelected.delete(cardId);
     } else {
+      if (newSelected.size >= maxBuildings) {
+        Alert.alert(
+          'Limit budynków',
+          maxBuildings === 1
+            ? 'Możesz wybudować tylko 1 budynek w tej rundzie.'
+            : `Możesz wybudować maksymalnie ${maxBuildings} budynki w tej rundzie.`,
+        );
+        return;
+      }
+      const card = me?.cards.find((c: CardDto) => c.id === cardId);
+      if (card && getCardCost(card) > remainingGold) {
+        Alert.alert(
+          'Za mało złota',
+          'Nie masz wystarczająco złota, aby wybudować ten budynek.',
+        );
+        return;
+      }
       newSelected.add(cardId);
     }
     setSelectedCards(newSelected);
   };
 
-  const handleBuild = () => {
+  const handleConfirmBuild = () => {
+    if (!gameId) return;
+    if (!canBuildInteract) return;
     if (selectedCards.size === 0) {
       Alert.alert('Błąd', 'Wybierz kartę do budowy');
       return;
     }
+    if (!playerId) return;
 
-    selectedCards.forEach((cardId) => {
-      const card = me?.cards.find((c: { id: string }) => c.id === cardId);
-      if (card) {
-        addAction({
-          type: 'build',
+    const buildActions = Array.from(selectedCards)
+      .map((cardId) => {
+        const card = me?.cards.find((c: { id: string }) => c.id === cardId);
+        if (!card) return null;
+        return {
+          type: 'build' as const,
           cardId,
           buildingType: card.buildingType,
           buildingValue: card.buildingValue,
-        });
-      }
-    });
+        };
+      })
+      .filter((a): a is { type: 'build'; cardId: string; buildingType: string; buildingValue: number } => a !== null);
 
+    if (buildActions.length === 0) return;
+
+    confirmBuild({
+      gameId,
+      actions: buildActions,
+      passBuild: false,
+    });
+    setLocalBuildSubmitted(true);
+  };
+
+  const handleSkipBuild = () => {
+    if (!gameId) return;
+    if (!canBuildInteract) return;
+    if (!playerId) return;
+
+    confirmBuild({
+      gameId,
+      actions: [],
+      passBuild: true,
+    });
+    setLocalBuildSubmitted(true);
     setSelectedCards(new Set());
   };
 
-  const handleUseProfession = () => {
-    if (!me?.profession) return;
+  const handleConfirmProfessionAbility = () => {
+    if (!gameId) return;
+    if (!playerId) return;
+    if (!canAbilityInteract) return;
+    if (!professionRequiresPlayerTarget) return;
+    if (!selectedProfessionTargetId) return;
 
-    addAction({
+    const professionAction = {
       type: 'use_profession',
       professionAbility: true,
-      target: selectedTarget || undefined,
-    });
+      target: selectedProfessionTargetId,
+      theftTarget: me?.profession === 'thief' ? thiefTheftTarget : undefined,
+    } as const;
 
-    setProfessionAbilityUsed(true);
-  };
-
-  const handleSubmit = () => {
-    if (!gameId || pendingActions.length === 0) {
-      Alert.alert('Błąd', 'Dodaj przynajmniej jedną akcję');
-      return;
-    }
-
-    // Sprawdź czy jesteśmy w fazie PLANNING
-    if (phase !== 'PLANNING') {
-      Alert.alert('Błąd', `Nie można wysłać akcji w fazie ${phase}. Poczekaj na fazę PLANNING.`);
-      return;
-    }
-
-    submitActions({
+    confirmAbility({
       gameId,
-      actions: pendingActions,
+      abilityAction: {
+        ...professionAction,
+      },
     });
-
-    // Natychmiast oznacz siebie jako zatwierdzonego (zostanie zaktualizowane przez WebSocket)
-    if (playerId) {
-      const { submittedPlayers } = useGameStore.getState();
-      useGameStore.setState({
-        submittedPlayers: new Set([...submittedPlayers, playerId]),
-      });
-    }
-
-    clearActions();
-    setSelectedCards(new Set());
-    setSelectedTarget(null);
-    setProfessionAbilityUsed(false);
+    setLocalAbilitySubmitted(true);
   };
 
-  const otherPlayers = players.filter((p) => p.id !== playerId);
+  const sortedPlayers = [...players].sort(
+    (a, b) =>
+      (a.joinOrder ?? Number.MAX_SAFE_INTEGER) -
+      (b.joinOrder ?? Number.MAX_SAFE_INTEGER),
+  );
+  const targetPlayers = playerId ? sortedPlayers.filter((p) => p.id !== playerId) : [];
+
+  // Koszt budowy karty = wartość budynku z uwzględnieniem zniżki własnego zawodu.
+  // Łowca okazji buduje o 2 taniej (minimum 1).
+  const getCardCost = (card: CardDto): number => {
+    let cost = card.buildingValue;
+    if (me?.profession === 'opportunity_hunter') {
+      cost = Math.max(1, cost - 2);
+    }
+    return cost;
+  };
+
+  const availableGold = me?.gold ?? 0;
+  const selectedCost = Array.from(selectedCards).reduce((sum, cardId) => {
+    const card = me?.cards.find((c: CardDto) => c.id === cardId);
+    return sum + (card ? getCardCost(card) : 0);
+  }, 0);
+  const remainingGold = availableGold - selectedCost;
 
   return (
     <View style={styles.container}>
@@ -147,39 +249,20 @@ export default function PlanningScreen() {
             </View>
           )}
         </View>
-        {me && (
-          <View style={styles.headerInfo}>
-            <Text style={styles.headerLabel}>Złoto:</Text>
-            <Text style={styles.goldText}>{me.gold}</Text>
-            {professionData && (
-              <>
-                <Text style={styles.headerLabel}>Zawód:</Text>
-                <Text style={styles.professionText}>{professionData.name}</Text>
-              </>
-            )}
-          </View>
-        )}
       </View>
 
       {/* Lista graczy */}
       <ScrollView style={styles.playersList}>
         <Text style={styles.sectionTitle}>Gracze</Text>
-        {otherPlayers.map((player) => (
+        {sortedPlayers.map((player) => (
           <PlayerCard
             key={player.id}
             player={player}
+            isMe={player.id === playerId}
             style={styles.playerCard}
             hasSubmitted={submittedPlayers.has(player.id)}
           />
         ))}
-        {me && (
-          <PlayerCard
-            player={me}
-            isMe={true}
-            style={styles.playerCard}
-            hasSubmitted={submittedPlayers.has(me.id)}
-          />
-        )}
       </ScrollView>
 
       {/* Dolny panel z kartami - rozsuwany */}
@@ -198,98 +281,172 @@ export default function PlanningScreen() {
 
         {handExpanded && (
           <ScrollView style={styles.handContent}>
-            <View style={styles.cardsContainer}>
-              {me?.cards.map((card: CardDto) => (
-                <HandCard
-                  key={card.id}
-                  card={card}
-                  selected={selectedCards.has(card.id)}
-                  onPress={() => handleCardSelect(card.id)}
-                />
-              ))}
-            </View>
-
-            {/* Zawód i zdolność */}
-            {professionData && (
-              <Card style={styles.professionCard}>
-                <Text style={styles.professionTitle}>
-                  Zawód: {professionData.name}
-                </Text>
-                <Text style={styles.professionDescription}>
-                  {getProfessionDescription(me?.profession || '')}
-                </Text>
-                {!professionAbilityUsed && needsTarget(me?.profession || '') && (
-                  <View style={styles.targetSelector}>
-                    <Text style={styles.targetLabel}>Wybierz cel:</Text>
-                    <ScrollView horizontal style={styles.targetList}>
-                      {otherPlayers.map((player) => (
-                        <Pressable
-                          key={player.id}
-                          onPress={() => setSelectedTarget(player.id)}
-                          style={[
-                            styles.targetButton,
-                            selectedTarget === player.id && styles.targetButtonSelected
-                          ]}
-                        >
-                          <Text style={styles.targetButtonText}>{player.name}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
+            {me && (
+              <View style={styles.resourceBar}>
+                <View style={styles.resourceItem}>
+                  <Text style={styles.headerLabel}>Złoto:</Text>
+                  <Text style={styles.goldText}>{availableGold}</Text>
+                </View>
+                {professionData && (
+                  <View style={styles.resourceItem}>
+                    <Text style={styles.headerLabel}>Zawód:</Text>
+                    <Text style={styles.professionText}>{professionData.name}</Text>
                   </View>
                 )}
-                {!professionAbilityUsed && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onPress={handleUseProfession}
-                    disabled={needsTarget(me?.profession || '') && !selectedTarget}
-                    style={styles.professionButton}
-                  >
-                    Użyj zdolności zawodowej
-                  </Button>
-                )}
-              </Card>
+              </View>
             )}
 
-            {/* Akcje */}
-            <View style={styles.actionsSection}>
-              <Text style={styles.actionsTitle}>Akcje ({pendingActions.length})</Text>
-              {pendingActions.length > 0 && (
-                <Card style={styles.actionsCard}>
-                  {pendingActions.map((action, index) => (
-                    <View key={index} style={styles.actionItem}>
-                      <Text style={styles.actionText}>
-                        {action.type === 'build' && `Budowa: ${action.buildingType}`}
-                        {action.type === 'use_profession' && 'Użycie zdolności zawodowej'}
-                        {action.type === 'pass' && 'Pominięcie'}
-                      </Text>
-                    </View>
-                  ))}
-                </Card>
-              )}
-            </View>
+            <View style={styles.columns}>
+              {/* Lewa kolumna: budynki */}
+              <View style={styles.leftColumn}>
+                <View style={styles.cardsContainer}>
+                  {me?.cards.map((card: CardDto) => {
+                    const isSelected = selectedCards.has(card.id);
+                    const atLimit = !isSelected && selectedCards.size >= maxBuildings;
+                    const cost = getCardCost(card);
+                    const cannotAfford = !isSelected && cost > remainingGold;
+                    const cardDisabled = !canBuildInteract || atLimit || cannotAfford;
+                    return (
+                      <View key={card.id} style={styles.cardWithCost}>
+                        <HandCard
+                          card={card}
+                          selected={isSelected}
+                          disabled={cardDisabled}
+                          onPress={() => handleCardSelect(card.id)}
+                        />
+                        <Text
+                          style={[
+                            styles.cardCostText,
+                            cannotAfford && styles.cardCostTextUnaffordable,
+                          ]}
+                        >
+                          Koszt: {cost} złota
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
 
-            {/* Przyciski akcji */}
-            <View style={styles.actionButtons}>
-              <Button
-                variant="secondary"
-                onPress={handleBuild}
-                disabled={selectedCards.size === 0}
-                style={styles.buildButton}
-              >
-                Buduj ({selectedCards.size})
-              </Button>
-            </View>
+                {selectedCards.size > 0 && (
+                  <Text style={styles.buildCostInfo}>
+                    Budowa zużyje {selectedCost}{' '}
+                    {selectedCost === 1 ? 'złoto' : 'złota'} z {availableGold} dostępnego
+                    {' '}(pozostanie {remainingGold}).
+                  </Text>
+                )}
 
-            <Button
-              variant="primary"
-              size="lg"
-              onPress={handleSubmit}
-              disabled={pendingActions.length === 0}
-              style={styles.submitButton}
-            >
-              Zatwierdź ruch
-            </Button>
+                <View style={styles.actionButtons}>
+                  <Button
+                    variant="primary"
+                    onPress={handleConfirmBuild}
+                    disabled={!canBuildInteract || selectedCards.size === 0 || localBuildSubmitted}
+                    style={styles.buildButton}
+                  >
+                    Buduj ({selectedCards.size}/{maxBuildings})
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    onPress={handleSkipBuild}
+                    disabled={!canBuildInteract || localBuildSubmitted}
+                    style={styles.skipButton}
+                  >
+                    Pomiń budowę
+                  </Button>
+                </View>
+
+                {serverBuildConfirmed && (
+                  <Text style={styles.stepConfirmedText}>✓ Budowa potwierdzona</Text>
+                )}
+              </View>
+
+              {/* Prawa kolumna: zdolność specjalna */}
+              <View style={styles.rightColumn}>
+                {professionData && (
+                  <Card style={styles.professionCard}>
+                    <Text style={styles.professionTitle}>
+                      Zawód: {professionData.name}
+                    </Text>
+                    <Text style={styles.professionDescription}>
+                      {getProfessionDescription(me?.profession || '')}
+                    </Text>
+
+                    {professionRequiresPlayerTarget ? (
+                      <>
+                        <Text style={styles.targetLabel}>Wybierz gracza (cel)</Text>
+                        <View style={styles.targetList}>
+                          {targetPlayers.map((p) => {
+                            const selected = selectedProfessionTargetId === p.id;
+                            return (
+                              <Pressable
+                                key={p.id}
+                                disabled={!canAbilityInteract}
+                                onPress={
+                                  canAbilityInteract
+                                    ? () => setSelectedProfessionTargetId(p.id)
+                                    : undefined
+                                }
+                                style={[
+                                  styles.targetButton,
+                                  selected && styles.targetButtonSelected,
+                                ]}
+                              >
+                                <Text style={styles.targetButtonText}>{p.name}</Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+
+                        {me?.profession === 'thief' && (
+                          <View style={styles.targetSelector}>
+                            <Text style={styles.targetLabel}>Co ukraść?</Text>
+                            <View style={styles.targetList}>
+                              {(['gold', 'card'] as const).map((t) => {
+                                const selected = thiefTheftTarget === t;
+                                return (
+                                  <Pressable
+                                    key={t}
+                                    disabled={!canAbilityInteract}
+                                    onPress={
+                                      canAbilityInteract ? () => setThiefTheftTarget(t) : undefined
+                                    }
+                                    style={[
+                                      styles.targetButton,
+                                      selected && styles.targetButtonSelected,
+                                    ]}
+                                  >
+                                    <Text style={styles.targetButtonText}>
+                                      {t === 'gold' ? 'Złoto' : 'Kartę'}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        <View style={styles.professionAbilityButtonRow}>
+                          <Button
+                            variant="primary"
+                            onPress={handleConfirmProfessionAbility}
+                            disabled={!canConfirmProfessionAbility || localAbilitySubmitted}
+                            style={styles.professionAbilityButton}
+                          >
+                            Zatwierdź operację zdolności
+                          </Button>
+                        </View>
+                      </>
+                    ) : (
+                      <Text style={styles.autoStepText}>Zdolność: auto</Text>
+                    )}
+
+                    {professionRequiresPlayerTarget && serverAbilityConfirmed && (
+                      <Text style={styles.stepConfirmedText}>✓ Zdolność potwierdzona</Text>
+                    )}
+                  </Card>
+                )}
+              </View>
+            </View>
           </ScrollView>
         )}
       </View>
@@ -315,17 +472,6 @@ function getProfessionDescription(profession: string): string {
     inspector: 'Inspektor – wskazuje gracza, którego budynki zostaną wybudowane dopiero w kolejnej rundzie',
   };
   return descriptions[profession] || 'Brak opisu';
-}
-
-function needsTarget(profession: string): boolean {
-  return [
-    'vandal',
-    'thief',
-    'saboteur',
-    'spy',
-    'inspector',
-    'politician',
-  ].includes(profession);
 }
 
 const styles = StyleSheet.create({
@@ -372,14 +518,41 @@ const styles = StyleSheet.create({
   timerTextWarning: {
     color: '#EF4444',
   },
-  headerInfo: {
+  resourceBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+    gap: 24,
+  },
+  resourceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerLabel: {
     color: '#9CA3AF',
     marginRight: 8,
+  },
+  cardWithCost: {
+    alignItems: 'center',
+  },
+  cardCostText: {
+    color: '#D1D5DB',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  cardCostTextUnaffordable: {
+    color: '#EF4444',
+  },
+  buildCostInfo: {
+    color: '#FBBF24',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   goldText: {
     color: '#FBBF24',
@@ -419,6 +592,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#374151',
   },
+  handToggleDisabled: {
+    opacity: 0.6,
+  },
   handToggleContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -442,6 +618,17 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 16,
+  },
+  columns: {
+    flexDirection: 'row',
+    gap: 12,
+    flex: 1,
+  },
+  leftColumn: {
+    flex: 2,
+  },
+  rightColumn: {
+    flex: 1,
   },
   professionCard: {
     marginBottom: 16,
@@ -511,6 +698,26 @@ const styles = StyleSheet.create({
   },
   buildButton: {
     flex: 1,
+  },
+  skipButton: {
+    flex: 1,
+  },
+  stepConfirmedText: {
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  autoStepText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    marginTop: 8,
+  },
+  professionAbilityButtonRow: {
+    marginTop: 12,
+  },
+  professionAbilityButton: {
+    width: '100%',
   },
   submitButton: {
     width: '100%',

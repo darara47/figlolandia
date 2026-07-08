@@ -16,7 +16,45 @@ export interface SubmitActionsPayload {
     target?: string;
     cardId?: string;
     buildingType?: string;
+    buildingCategory?: string;
+    buildingValue?: number;
+
+    // Profession ability
+    professionAbility?: boolean;
+    theftTarget?: 'gold' | 'card';
+    inspectTarget?: string;
+    cheaperCategory?: string;
+    increasedValueBuildingId?: string;
   }>;
+}
+
+// Potwierdzenie wyboru budowy w fazie PLANNING
+export interface ConfirmBuildPayload {
+  gameId: string;
+  passBuild?: boolean;
+  actions: Array<{
+    type: 'build';
+    cardId?: string;
+    buildingType: string;
+    buildingValue: number;
+  }>;
+}
+
+// Potwierdzenie wyboru zdolności specjalnej w fazie PLANNING
+export interface ConfirmAbilityPayload {
+  gameId: string;
+  abilityAction: {
+    type: 'use_profession';
+    professionAbility: true;
+    target?: string;
+    theftTarget?: 'gold' | 'card';
+    inspectTarget?: string;
+    cheaperCategory?: string;
+    increasedValueBuildingId?: string;
+    buildingCategory?: string;
+    buildingType?: string;
+    cardId?: string;
+  };
 }
 
 // Server → Client
@@ -42,6 +80,7 @@ export interface GameStateUpdatePayload {
       buildingValue: number;
     }>;
     profession: string | null;
+    joinOrder: number;
     order: number;
   }>;
   winner: string | null;
@@ -51,6 +90,7 @@ export interface GameStateUpdatePayload {
     eventFrequency: number;
   };
   submittedPlayers?: string[]; // Lista ID graczy, którzy zatwierdzili swoje ruchy (tylko w fazie PLANNING)
+  planningStatus?: Record<string, { buildConfirmed: boolean; abilityConfirmed: boolean }>;
   planningPhaseStartTime?: number; // Timestamp rozpoczęcia fazy PLANNING (w milisekundach)
   narrativeEvents?: NarrativeEvent[]; // Wydarzenia narratora
 }
@@ -80,6 +120,8 @@ export interface ErrorPayload {
 export enum ClientEvents {
   JOIN_GAME = 'JOIN_GAME',
   SUBMIT_ACTIONS = 'SUBMIT_ACTIONS',
+  CONFIRM_BUILD = 'CONFIRM_BUILD',
+  CONFIRM_ABILITY = 'CONFIRM_ABILITY',
 }
 
 export enum ServerEvents {

@@ -15,6 +15,8 @@ import {
   ServerEvents,
   JoinGamePayload,
   SubmitActionsPayload,
+  ConfirmBuildPayload,
+  ConfirmAbilityPayload,
   GameStateUpdatePayload,
   PhaseChangePayload,
   ErrorPayload,
@@ -47,7 +49,6 @@ export class GameGateway
   private gameStartTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout
   private gamePlanningTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout (PREP -> PLANNING)
   private planningPhaseTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout (PLANNING -> RESOLUTION)
-  private planningPhaseStartTimes: Map<string, number> = new Map(); // gameId -> timestamp rozpoczęcia fazy PLANNING
 
   constructor(
     private readonly lobbyService: LobbyService,
@@ -115,8 +116,6 @@ export class GameGateway
               const currentInstance = this.gameStateManager.getGame(gameId);
               if (currentInstance && currentInstance.state.phase === 'PREP') {
                 const planningState = this.gameService.enterPlanningPhase(gameId);
-                const startTime = Date.now();
-                this.planningPhaseStartTimes.set(gameId, startTime);
                 this.emitGameStateUpdate(gameId, planningState);
                 this.emitPhaseChange(gameId, planningState.phase, planningState.round);
                 // Ustaw timeout dla nowej fazy PLANNING
@@ -163,14 +162,6 @@ export class GameGateway
     }
 
     this.clearPlanningPhaseTimeout(gameId);
-
-    // Wyczyść timestamp fazy PLANNING gdy faza się zmienia
-    if (this.planningPhaseStartTimes.has(gameId)) {
-      const instance = this.gameStateManager.getGame(gameId);
-      if (instance && instance.state.phase !== 'PLANNING') {
-        this.planningPhaseStartTimes.delete(gameId);
-      }
-    }
   }
 
   /**
@@ -336,6 +327,15 @@ export class GameGateway
         target: a.target,
         cardId: a.cardId,
         buildingType: a.buildingType as any,
+        buildingCategory: a.buildingCategory as any,
+        buildingValue: a.buildingValue,
+
+        // Profession ability actions
+        professionAbility: a.professionAbility,
+        theftTarget: a.theftTarget,
+        inspectTarget: a.inspectTarget,
+        cheaperCategory: a.cheaperCategory as any,
+        increasedValueBuildingId: a.increasedValueBuildingId,
       }));
 
       // Zapisuj akcje
@@ -370,9 +370,6 @@ export class GameGateway
                 const updatedState = this.gameService.enterPlanningPhase(
                   payload.gameId,
                 );
-                // Zapisz czas rozpoczęcia fazy PLANNING
-                const startTime = Date.now();
-                this.planningPhaseStartTimes.set(payload.gameId, startTime);
                 this.emitGameStateUpdate(payload.gameId, updatedState);
                 this.emitPhaseChange(
                   payload.gameId,
@@ -392,6 +389,167 @@ export class GameGateway
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       this.logger.error(`Błąd SUBMIT_ACTIONS: ${errorMessage}`, errorStack);
+      this.emitError(client, errorMessage);
+    }
+  }
+
+  /**
+   * Obsługa CONFIRM_BUILD
+   * Klient potwierdza wybór budowy (albo pominięcie budowy) w fazie PLANNING.
+   */
+  @SubscribeMessage(ClientEvents.CONFIRM_BUILD)
+  handleConfirmBuild(
+    @MessageBody() payload: ConfirmBuildPayload,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const playerId = this.clientToPlayer.get(client.id);
+      if (!playerId) {
+        throw new Error('Gracz nie jest zidentyfikowany');
+      }
+
+      const instance = this.gameStateManager.getGame(payload.gameId);
+      if (!instance) {
+        throw new Error('Gra nie istnieje');
+      }
+
+      if (instance.state.phase !== 'PLANNING') {
+        this.logger.warn(
+          `CONFIRM_BUILD: Gracz ${playerId} próbuje wysłać akcje w fazie ${instance.state.phase}, wymagana faza: PLANNING`,
+        );
+        throw new Error(`Nie można wysłać budowy w fazie ${instance.state.phase}. Wymagana faza: PLANNING`);
+      }
+
+      const buildActions = (payload.passBuild ? [] : payload.actions).map((a) => ({
+        type: a.type as any,
+        target: undefined,
+        cardId: a.cardId,
+        buildingType: a.buildingType as any,
+        buildingCategory: undefined,
+        buildingValue: a.buildingValue,
+        // Profession ability actions (brak)
+        professionAbility: undefined,
+        theftTarget: undefined,
+        inspectTarget: undefined,
+        cheaperCategory: undefined,
+        increasedValueBuildingId: undefined,
+      }));
+
+      const gameState = this.gameService.confirmBuild(
+        payload.gameId,
+        playerId,
+        buildActions,
+      );
+
+      this.emitGameStateUpdate(payload.gameId, gameState);
+
+      if (gameState.phase === 'RESOLUTION' || gameState.phase === 'PREP' || gameState.phase === 'END') {
+        this.clearPlanningPhaseTimeout(payload.gameId);
+      }
+
+      if (gameState.phase === 'PREP' || gameState.phase === 'END') {
+        this.emitPhaseChange(payload.gameId, gameState.phase, gameState.round);
+
+        if (gameState.phase === 'PREP') {
+          if (!this.gamePlanningTimeouts.has(payload.gameId)) {
+            const timeout = setTimeout(() => {
+              this.gamePlanningTimeouts.delete(payload.gameId);
+              const currentInstance = this.gameStateManager.getGame(payload.gameId);
+              if (currentInstance && currentInstance.state.phase === 'PREP') {
+                const updatedState = this.gameService.enterPlanningPhase(payload.gameId);
+                this.emitGameStateUpdate(payload.gameId, updatedState);
+                this.emitPhaseChange(payload.gameId, updatedState.phase, updatedState.round);
+                this.setPlanningPhaseTimeout(payload.gameId);
+              }
+            }, 1000);
+            this.gamePlanningTimeouts.set(payload.gameId, timeout);
+          }
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Błąd CONFIRM_BUILD: ${errorMessage}`, errorStack);
+      this.emitError(client, errorMessage);
+    }
+  }
+
+  /**
+   * Obsługa CONFIRM_ABILITY
+   * Klient potwierdza wybór zdolności specjalnej w fazie PLANNING.
+   */
+  @SubscribeMessage(ClientEvents.CONFIRM_ABILITY)
+  handleConfirmAbility(
+    @MessageBody() payload: ConfirmAbilityPayload,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const playerId = this.clientToPlayer.get(client.id);
+      if (!playerId) {
+        throw new Error('Gracz nie jest zidentyfikowany');
+      }
+
+      const instance = this.gameStateManager.getGame(payload.gameId);
+      if (!instance) {
+        throw new Error('Gra nie istnieje');
+      }
+
+      if (instance.state.phase !== 'PLANNING') {
+        this.logger.warn(
+          `CONFIRM_ABILITY: Gracz ${playerId} próbuje wysłać akcje w fazie ${instance.state.phase}, wymagana faza: PLANNING`,
+        );
+        throw new Error(`Nie można wysłać zdolności w fazie ${instance.state.phase}. Wymagana faza: PLANNING`);
+      }
+
+      const abilityAction = {
+        type: payload.abilityAction.type as any,
+        target: payload.abilityAction.target,
+        cardId: payload.abilityAction.cardId,
+        buildingType: payload.abilityAction.buildingType as any,
+        buildingCategory: payload.abilityAction.buildingCategory as any,
+        buildingValue: undefined,
+        professionAbility: payload.abilityAction.professionAbility,
+        theftTarget: payload.abilityAction.theftTarget,
+        inspectTarget: payload.abilityAction.inspectTarget,
+        cheaperCategory: payload.abilityAction.cheaperCategory as any,
+        increasedValueBuildingId: payload.abilityAction.increasedValueBuildingId,
+      };
+
+      const gameState = this.gameService.confirmAbility(
+        payload.gameId,
+        playerId,
+        abilityAction,
+      );
+
+      this.emitGameStateUpdate(payload.gameId, gameState);
+
+      if (gameState.phase === 'RESOLUTION' || gameState.phase === 'PREP' || gameState.phase === 'END') {
+        this.clearPlanningPhaseTimeout(payload.gameId);
+      }
+
+      if (gameState.phase === 'PREP' || gameState.phase === 'END') {
+        this.emitPhaseChange(payload.gameId, gameState.phase, gameState.round);
+
+        if (gameState.phase === 'PREP') {
+          if (!this.gamePlanningTimeouts.has(payload.gameId)) {
+            const timeout = setTimeout(() => {
+              this.gamePlanningTimeouts.delete(payload.gameId);
+              const currentInstance = this.gameStateManager.getGame(payload.gameId);
+              if (currentInstance && currentInstance.state.phase === 'PREP') {
+                const updatedState = this.gameService.enterPlanningPhase(payload.gameId);
+                this.emitGameStateUpdate(payload.gameId, updatedState);
+                this.emitPhaseChange(payload.gameId, updatedState.phase, updatedState.round);
+                this.setPlanningPhaseTimeout(payload.gameId);
+              }
+            }, 1000);
+            this.gamePlanningTimeouts.set(payload.gameId, timeout);
+          }
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Błąd CONFIRM_ABILITY: ${errorMessage}`, errorStack);
       this.emitError(client, errorMessage);
     }
   }
@@ -429,9 +587,6 @@ export class GameGateway
           const currentInstance = this.gameStateManager.getGame(gameId);
           if (currentInstance && currentInstance.state.phase === 'PREP') {
             const planningState = this.gameService.enterPlanningPhase(gameId);
-            // Zapisz czas rozpoczęcia fazy PLANNING
-            const startTime = Date.now();
-            this.planningPhaseStartTimes.set(gameId, startTime);
             this.emitGameStateUpdate(gameId, planningState);
             this.emitPhaseChange(gameId, planningState.phase, planningState.round);
             // Ustaw timeout dla fazy PLANNING (10 minut)
@@ -451,17 +606,27 @@ export class GameGateway
    */
   public emitGameStateUpdate(gameId: string, state: any): void {
     // Utwórz mapę zatwierdzonych graczy (w fazie PLANNING)
-    const submittedPlayers: string[] = [];
-    if (state.phase === 'PLANNING' && state.pendingActions) {
-      state.pendingActions.forEach((actions: any, playerId: string) => {
-        if (actions && actions.length > 0) {
-          submittedPlayers.push(playerId);
-        }
-      });
-    }
+    const planningStatus =
+      state.phase === 'PLANNING' ? this.gameService.getPlanningStatus(gameId) : undefined;
+
+    const submittedPlayers: string[] =
+      state.phase === 'PLANNING'
+        ? (state.players || [])
+          .filter((p: any) => planningStatus?.[p.id]?.buildConfirmed && planningStatus?.[p.id]?.abilityConfirmed)
+          .map((p: any) => p.id)
+        : [];
 
     // W fazie PLANNING ukryj zawody innych graczy
     const shouldHideProfessions = state.phase === 'PLANNING';
+
+    // Widok graczy: zawsze stabilnie po kolejności dołączenia
+    const playersForView = Array.isArray(state.players)
+      ? [...state.players].sort(
+        (a: any, b: any) =>
+          (a.joinOrder ?? Number.MAX_SAFE_INTEGER) -
+          (b.joinOrder ?? Number.MAX_SAFE_INTEGER),
+      )
+      : [];
 
     // Base payload (bez zawodów w PLANNING)
     const basePayload: GameStateUpdatePayload = {
@@ -469,7 +634,7 @@ export class GameGateway
       gamePin: state.gamePin,
       phase: state.phase,
       round: state.round,
-      players: state.players.map((p: any) => ({
+      players: playersForView.map((p: any) => ({
         id: p.id,
         name: p.name,
         gold: p.gold,
@@ -477,6 +642,7 @@ export class GameGateway
         cards: p.cards,
         // W fazie PLANNING ukryj wszystkie zawody (będą pokazane osobno dla każdego gracza)
         profession: shouldHideProfessions ? null : p.profession,
+        joinOrder: p.joinOrder ?? 0,
         order: p.order,
       })),
       winner: state.winner,
@@ -486,9 +652,10 @@ export class GameGateway
         eventFrequency: state.config.eventFrequency,
       },
       submittedPlayers, // Lista ID graczy, którzy zatwierdzili swoje ruchy
+      planningStatus,
       planningPhaseStartTime: state.phase === 'PLANNING'
-        ? (this.planningPhaseStartTimes.get(state.gameId) || Date.now())
-        : undefined, // Timestamp rozpoczęcia fazy PLANNING
+        ? state.planningPhaseStartTime
+        : undefined, // Timestamp rozpoczęcia fazy PLANNING (ze stanu gry)
       narrativeEvents: (state as any).narrativeEvents || [], // Wydarzenia narratora
     };
 
@@ -509,7 +676,11 @@ export class GameGateway
               players: basePayload.players.map((p: any) => ({
                 ...p,
                 // Pokaż zawód tylko dla własnego gracza
-                profession: p.id === playerId ? state.players.find((pl: any) => pl.id === playerId)?.profession || null : null,
+                profession:
+                  p.id === playerId
+                    ? state.players.find((pl: any) => pl.id === playerId)?.profession ||
+                    null
+                    : null,
               })),
             };
             socket.emit(ServerEvents.GAME_STATE_UPDATE, personalizedPayload);

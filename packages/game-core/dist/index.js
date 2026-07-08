@@ -268,7 +268,11 @@ class RoundEngine {
             if (player.delayedBuildings)
                 continue;
             const playerActions = actions.get(player.id) || [];
-            const buildActions = playerActions.filter((a) => a.type === 'build');
+            // Limit budynków na rundę: Budowlaniec może wybudować +1 (2), pozostali 1.
+            const maxBuildings = player.profession === 'builder' ? 2 : 1;
+            const buildActions = playerActions
+                .filter((a) => a.type === 'build')
+                .slice(0, maxBuildings);
             for (const buildAction of buildActions) {
                 if (!buildAction.buildingType)
                     continue;
@@ -291,8 +295,14 @@ class RoundEngine {
                 if (player.profession === 'opportunity_hunter') {
                     cost = Math.max(1, cost - 2);
                 }
-                // Sprawdź czy gracz ma wystarczająco złota
-                if (player.gold >= cost) {
+                // Sprawdź czy gracz ma wystarczająco złota.
+                // Fallback: jeśli gracza nie stać, budowa jest pomijana, a informacja trafia do logów.
+                if (player.gold < cost) {
+                    console.warn(`[RoundEngine] Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
+                        `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`);
+                    continue;
+                }
+                {
                     player.gold -= cost;
                     const buildingId = `building-${Date.now()}-${Math.random()}`;
                     let buildingValue = cost; // wartość = koszt budowy

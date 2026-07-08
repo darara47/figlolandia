@@ -15,6 +15,13 @@ import { GameStateManager } from './game.state';
 import { SeededRNG } from '../utils/rng';
 import { NarrativeService } from './narrative.service';
 
+type PlanningStep = {
+  buildConfirmed: boolean;
+  abilityConfirmed: boolean;
+  buildActions: PlayerAction[];
+  abilityActions: PlayerAction[];
+};
+
 /**
  * Główny serwis zarządzający logiką gry i fazami
  * Używa game-core do rozstrzygania rund
@@ -23,6 +30,9 @@ import { NarrativeService } from './narrative.service';
 export class GameService {
   private readonly PLANNING_TIMEOUT = 600000; // 10 minut (600000 ms)
   private planningTimeouts: Map<string, NodeJS.Timeout> = new Map();
+
+  // gameId -> playerId -> planning step
+  private planningStepsByGame: Map<string, Map<string, PlanningStep>> = new Map();
 
   constructor(
     private readonly gameStateManager: GameStateManager,
@@ -227,12 +237,158 @@ export class GameService {
     }
 
     state.phase = 'PLANNING';
+
+    // Zapisz czas startu fazy PLANNING w autorytatywnym stanie gry.
+    // Ustawiany dokładnie raz na rundę, więc timer resetuje się tylko przy nowej rundzie.
+    state.planningPhaseStartTime = Date.now();
+
+    // Reset kroki PLANNING (separacja "Buduj" i "Zatwierdź zdolność").
+    // Dla części zawodów zdolność nie wymaga wyboru celu -> auto-potwierdzenie.
+    const planningSteps = new Map<string, PlanningStep>();
+    for (const player of state.players) {
+      const profession = player.profession;
+      const abilityRequiresPlayerTarget =
+        profession === 'saboteur' ||
+        profession === 'vandal' ||
+        profession === 'thief' ||
+        profession === 'inspector' ||
+        profession === 'spy';
+
+      planningSteps.set(player.id, {
+        buildConfirmed: false,
+        abilityConfirmed: !abilityRequiresPlayerTarget,
+        buildActions: [],
+        abilityActions: [],
+      });
+    }
+    this.planningStepsByGame.set(gameId, planningSteps);
+
+    // Na starcie PLANNING wyczyść akcje do rozstrzygnięcia.
+    state.pendingActions.clear();
     this.gameStateManager.updateGameState(gameId, state);
 
     // Timeout jest zarządzany przez GameGateway, aby móc emitować aktualizacje do klientów
     // this.setPlanningTimeout(gameId);
 
     return state;
+  }
+
+  /**
+   * Potwierdzenie wyboru budowy (PLANNING).
+   * Zapisuje build step, ale nie kończy rundy dopóki nie ma też potwierdzenia zdolności.
+   */
+  confirmBuild(
+    gameId: string,
+    playerId: string,
+    buildActions: PlayerAction[],
+  ): GameState {
+    const instance = this.gameStateManager.getGame(gameId);
+    if (!instance) {
+      throw new NotFoundException(`Gra ${gameId} nie istnieje`);
+    }
+
+    const { state } = instance;
+    if (state.phase !== 'PLANNING') {
+      throw new BadRequestException('Nie można wysłać budowy w fazie ' + state.phase);
+    }
+
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player) {
+      throw new NotFoundException('Gracz nie jest w grze');
+    }
+
+    // Waliduj tylko budowę (jeśli puste, to oznacza pominięcie budowy).
+    this.validateActions(player, buildActions, state);
+
+    const planningSteps = this.planningStepsByGame.get(gameId);
+    if (!planningSteps) {
+      throw new BadRequestException('Nie zainicjalizowano kroków PLANNING');
+    }
+
+    const step = planningSteps.get(playerId);
+    if (!step) {
+      throw new BadRequestException('Nie znaleziono kroku PLANNING gracza');
+    }
+
+    step.buildConfirmed = true;
+    step.buildActions = buildActions;
+
+    const combinedActions = [...step.buildActions, ...step.abilityActions];
+    state.pendingActions.set(playerId, combinedActions);
+    this.gameStateManager.updateGameState(gameId, state);
+
+    if (this.allPlayersSubmitted(gameId, state)) {
+      return this.enterResolutionPhase(gameId);
+    }
+
+    return state;
+  }
+
+  /**
+   * Potwierdzenie zdolności specjalnej (PLANNING).
+   */
+  confirmAbility(
+    gameId: string,
+    playerId: string,
+    abilityAction: PlayerAction,
+  ): GameState {
+    const instance = this.gameStateManager.getGame(gameId);
+    if (!instance) {
+      throw new NotFoundException(`Gra ${gameId} nie istnieje`);
+    }
+
+    const { state } = instance;
+    if (state.phase !== 'PLANNING') {
+      throw new BadRequestException('Nie można wysłać zdolności w fazie ' + state.phase);
+    }
+
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player) {
+      throw new NotFoundException('Gracz nie jest w grze');
+    }
+
+    this.validateActions(player, [abilityAction], state);
+
+    const planningSteps = this.planningStepsByGame.get(gameId);
+    if (!planningSteps) {
+      throw new BadRequestException('Nie zainicjalizowano kroków PLANNING');
+    }
+
+    const step = planningSteps.get(playerId);
+    if (!step) {
+      throw new BadRequestException('Nie znaleziono kroku PLANNING gracza');
+    }
+
+    step.abilityConfirmed = true;
+    step.abilityActions = [abilityAction];
+
+    const combinedActions = [...step.buildActions, ...step.abilityActions];
+    state.pendingActions.set(playerId, combinedActions);
+    this.gameStateManager.updateGameState(gameId, state);
+
+    if (this.allPlayersSubmitted(gameId, state)) {
+      return this.enterResolutionPhase(gameId);
+    }
+
+    return state;
+  }
+
+  /**
+   * Statusy PLANNING dla każdego gracza (dla UI).
+   */
+  getPlanningStatus(gameId: string): Record<string, { buildConfirmed: boolean; abilityConfirmed: boolean }> {
+    const planningSteps = this.planningStepsByGame.get(gameId);
+    const result: Record<string, { buildConfirmed: boolean; abilityConfirmed: boolean }> = {};
+    if (!planningSteps) return result;
+
+    planningSteps.forEach((step, playerId) => {
+      result[playerId] = {
+        buildConfirmed: step.buildConfirmed,
+        abilityConfirmed: step.abilityConfirmed,
+      };
+    });
+
+    return result;
   }
 
   /**
@@ -260,16 +416,43 @@ export class GameService {
       throw new NotFoundException('Gracz nie jest w grze');
     }
 
-    // Walidacja akcji
+    // Walidacja akcji (dla kompatybilności ze starym protokołem SUBMIT_ACTIONS)
     this.validateActions(player, actions, state);
 
-    // Zapisz akcje
-    state.pendingActions.set(playerId, actions);
+    const planningSteps = this.planningStepsByGame.get(gameId);
+    if (!planningSteps) {
+      throw new BadRequestException('Nie zainicjalizowano kroków PLANNING');
+    }
+    const step = planningSteps.get(playerId);
+    if (!step) {
+      throw new BadRequestException('Nie znaleziono kroku PLANNING gracza');
+    }
+
+    const buildActions = actions.filter((a) => a.type === 'build');
+    const abilityActions = actions.filter(
+      (a) => a.type === 'use_profession' && a.professionAbility,
+    );
+
+    // SUBMIT_ACTIONS historycznie traktował kliknięcie jako "zapisz i zamknij".
+    // Dla kompatybilności:
+    // - buildConfirmed ustawiamy, jeśli są buildActions albo jeśli build nie był jeszcze potwierdzony.
+    // - abilityConfirmed ustawiamy, jeśli payload zawiera use_profession.
+    if (buildActions.length > 0 || !step.buildConfirmed) {
+      step.buildConfirmed = true;
+      step.buildActions = buildActions;
+    }
+
+    if (abilityActions.length > 0) {
+      step.abilityConfirmed = true;
+      // W MVP zakładamy 0..1 zdolności na krok (wysyłana jedna).
+      step.abilityActions = abilityActions.slice(0, 1);
+    }
+
+    const combinedActions = [...step.buildActions, ...step.abilityActions];
+    state.pendingActions.set(playerId, combinedActions);
     this.gameStateManager.updateGameState(gameId, state);
 
-    // Sprawdź czy wszyscy wysłali akcje
-    if (this.allPlayersSubmitted(state)) {
-      // Timeout jest zarządzany przez GameGateway
+    if (this.allPlayersSubmitted(gameId, state)) {
       return this.enterResolutionPhase(gameId);
     }
 
@@ -280,6 +463,15 @@ export class GameService {
    * Waliduje akcje gracza
    */
   private validateActions(player: Player, actions: PlayerAction[], state: GameState): void {
+    // Limit budynków na rundę: Budowlaniec może wybudować +1 (2), pozostali 1.
+    const maxBuildings = player.profession === 'builder' ? 2 : 1;
+    const buildCount = actions.filter((a) => a.type === 'build').length;
+    if (buildCount > maxBuildings) {
+      throw new BadRequestException(
+        `Możesz wybudować maksymalnie ${maxBuildings} ${maxBuildings === 1 ? 'budynek' : 'budynki'} w tej rundzie`,
+      );
+    }
+
     for (const action of actions) {
       // Sprawdź czy gracz ma kartę (jeśli wymagana)
       if (action.cardId) {
@@ -289,40 +481,13 @@ export class GameService {
         }
       }
 
-      // Sprawdź czy gracz ma wystarczająco złota (dla budowy)
+      // Waliduj tylko poprawność typu budynku.
+      // Koszt/złoto NIE jest twardo walidowany tutaj: jeśli gracza nie stać,
+      // budowa jest pomijana z fallbackiem (i logiem) w RoundEngine.resolveBuildings.
       if (action.type === 'build' && action.buildingType) {
         const buildingData = BUILDING_DATA[action.buildingType];
         if (!buildingData) {
           throw new BadRequestException('Nieprawidłowy typ budynku');
-        }
-
-        // Koszt = wartość budynku z karty (lub minimalna wartość)
-        const card = action.cardId
-          ? player.cards.find((c) => c.id === action.cardId)
-          : null;
-        const cost =
-          action.buildingValue ||
-          (card ? card.buildingValue : null) ||
-          buildingData.valueRange[0];
-
-        // Zastosuj zniżki zawodowe
-        let finalCost = cost;
-
-        // Polityk: tańsza kategoria (dla wszystkich graczy)
-        if (state.cheaperCategory === buildingData.category) {
-          finalCost = Math.max(1, finalCost - 1);
-        }
-
-        // Łowca okazji: budowa kosztuje o 2 mniej
-        if (player.profession === 'opportunity_hunter') {
-          finalCost = Math.max(1, finalCost - 2);
-        }
-
-        // Urbanista: wartość budynku zwiększa się o 1 (nie wpływa na koszt budowy)
-        // To jest obsłużone w RoundEngine.resolveBuildings
-
-        if (player.gold < finalCost) {
-          throw new BadRequestException('Niewystarczające złoto');
         }
       }
 
@@ -362,10 +527,18 @@ export class GameService {
   /**
    * Sprawdza czy wszyscy gracze wysłali akcje
    */
-  private allPlayersSubmitted(state: GameState): boolean {
-    return state.players.every((player) =>
-      state.pendingActions.has(player.id)
-    );
+  private allPlayersSubmitted(gameId: string, state: GameState): boolean {
+    const planningSteps = this.planningStepsByGame.get(gameId);
+
+    // Fallback (np. jeśli kroki nie zostały zainicjalizowane)
+    if (!planningSteps) {
+      return state.players.every((player) => state.pendingActions.has(player.id));
+    }
+
+    return state.players.every((player) => {
+      const step = planningSteps.get(player.id);
+      return !!step && step.buildConfirmed && step.abilityConfirmed;
+    });
   }
 
   /**
@@ -381,6 +554,21 @@ export class GameService {
 
     if (state.phase !== 'PLANNING') {
       throw new BadRequestException('Nie można przejść do RESOLUTION z fazy ' + state.phase);
+    }
+
+    // Przebuduj pendingActions z potwierdzonych kroków PLANNING.
+    // Dzięki temu RoundEngine dostaje kompletne akcje (build + ability) niezależnie od kolejności kliknięć.
+    const planningSteps = this.planningStepsByGame.get(gameId);
+    if (planningSteps) {
+      state.pendingActions.clear();
+      for (const p of state.players) {
+        const step = planningSteps.get(p.id);
+        const combined = [
+          ...(step?.buildActions || []),
+          ...(step?.abilityActions || []),
+        ];
+        state.pendingActions.set(p.id, combined);
+      }
     }
 
     // Zapisz stan przed rozstrzygnięciem (dla narratora)
@@ -433,6 +621,7 @@ export class GameService {
     }
 
     this.gameStateManager.updateGameState(gameId, resolvedState);
+    this.planningStepsByGame.delete(gameId);
     return resolvedState;
   }
 

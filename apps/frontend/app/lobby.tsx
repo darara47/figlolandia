@@ -89,9 +89,9 @@ export default function LobbyScreen() {
     setEventHandlers({
       onGameStateUpdate: (payload) => {
         console.log('Lobby: GAME_STATE_UPDATE received', payload.phase);
-        if (playerId) {
-          updateFromServer(payload, playerId);
-        }
+        if (!gameId || payload.gameId !== gameId) return;
+
+        if (playerId) updateFromServer(payload, playerId);
         // Zaktualizuj gameState w lobbyStore
         const gameStateDto: any = {
           gameId: payload.gameId,
@@ -125,13 +125,18 @@ export default function LobbyScreen() {
       },
       onPhaseChange: (payload) => {
         console.log('Lobby: PHASE_CHANGE received', payload.phase);
+        if (!gameId || payload.gameId !== gameId) return;
+
         if (payload.phase !== 'LOBBY' && payload.phase !== 'PREP') {
           console.log('Lobby: Przekierowanie do gry przez PHASE_CHANGE, faza:', payload.phase);
           router.replace(`/game/${payload.gameId}`);
         }
       },
     });
-  }, [playerId, router, updateFromServer]);
+    return () => {
+      setEventHandlers({});
+    };
+  }, [gameId, playerId, router, updateFromServer]);
 
   // Sprawdź fazę z gameStore i przekieruj jeśli potrzeba
   useEffect(() => {

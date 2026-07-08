@@ -10,6 +10,7 @@ export interface Player {
     cards: Card[];
     profession: Profession | null;
     lastProfession: Profession | null;
+    joinOrder: number;
     order: number;
     professionAbilityUsed: boolean;
     protected: boolean;
@@ -48,6 +49,7 @@ export interface GameState {
     pendingActions: Map<string, PlayerAction[]>;
     cheaperCategory?: BuildingCategory;
     spiedHands?: Map<string, Card[]>;
+    planningPhaseStartTime?: number;
 }
 export interface PlayerAction {
     type: ActionType;

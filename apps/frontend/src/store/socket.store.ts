@@ -6,6 +6,8 @@ import {
   ServerEvents,
   JoinGamePayload,
   SubmitActionsPayload,
+  ConfirmBuildPayload,
+  ConfirmAbilityPayload,
   GameStateUpdatePayload,
   PhaseChangePayload,
   ErrorPayload,
@@ -17,12 +19,15 @@ interface SocketStore {
   isConnecting: boolean;
   error: string | null;
   connectionAttempts: number; // Licznik prób połączenia
+  activeGameId: string | null; // Aktualnie obsługiwany gameId (po stronie klienta)
 
   // Actions
   connect: () => void;
   disconnect: () => void;
   joinGame: (payload: JoinGamePayload) => void;
   submitActions: (payload: SubmitActionsPayload) => void;
+  confirmBuild: (payload: ConfirmBuildPayload) => void;
+  confirmAbility: (payload: ConfirmAbilityPayload) => void;
 
   // Event handlers (set from outside)
   onGameStateUpdate?: (payload: GameStateUpdatePayload) => void;
@@ -41,6 +46,7 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
   isConnecting: false,
   error: null,
   connectionAttempts: 0,
+  activeGameId: null,
 
   connect: () => {
     try {
@@ -179,20 +185,32 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
         socket: null,
         isConnected: false,
         isConnecting: false,
-        connectionAttempts: 0 // Reset licznika przy rozłączeniu
+        connectionAttempts: 0, // Reset licznika przy rozłączeniu
+        activeGameId: null,
+        onGameStateUpdate: undefined,
+        onPhaseChange: undefined,
+        onError: undefined,
       });
     }
   },
 
   joinGame: (payload: JoinGamePayload) => {
-    const { socket } = get();
+    const { socket, activeGameId } = get();
     if (!socket?.connected) {
       console.error('Socket nie jest połączony');
       set({ error: 'Socket nie jest połączony' });
       return;
     }
+
+    // Jeśli łączymy się do innej gry niż poprzednia, opuść poprzedni room,
+    // żeby nie dostawać starych eventów podczas nowej sesji.
+    if (activeGameId && activeGameId !== payload.gameId) {
+      socket.leave(`game:${activeGameId}`);
+    }
+
     console.log('📤 JOIN_GAME:', payload);
     socket.emit(ClientEvents.JOIN_GAME, payload);
+    set({ activeGameId: payload.gameId });
   },
 
   submitActions: (payload: SubmitActionsPayload) => {
@@ -204,6 +222,28 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
     }
     console.log('📤 SUBMIT_ACTIONS:', payload);
     socket.emit(ClientEvents.SUBMIT_ACTIONS, payload);
+  },
+
+  confirmBuild: (payload: ConfirmBuildPayload) => {
+    const { socket } = get();
+    if (!socket?.connected) {
+      console.error('Socket nie jest połączony');
+      set({ error: 'Socket nie jest połączony' });
+      return;
+    }
+    console.log('📤 CONFIRM_BUILD:', payload);
+    socket.emit(ClientEvents.CONFIRM_BUILD, payload);
+  },
+
+  confirmAbility: (payload: ConfirmAbilityPayload) => {
+    const { socket } = get();
+    if (!socket?.connected) {
+      console.error('Socket nie jest połączony');
+      set({ error: 'Socket nie jest połączony' });
+      return;
+    }
+    console.log('📤 CONFIRM_ABILITY:', payload);
+    socket.emit(ClientEvents.CONFIRM_ABILITY, payload);
   },
 
   setEventHandlers: (handlers) => {

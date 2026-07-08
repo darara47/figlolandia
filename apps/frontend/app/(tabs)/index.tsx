@@ -27,6 +27,9 @@ export default function TabOneScreen() {
         Alert.alert('Błąd', payload.message);
       },
     });
+    return () => {
+      setEventHandlers({});
+    };
   }, [setEventHandlers]);
 
   // Opcjonalnie: połącz jeśli nie jesteśmy połączeni (tylko dla testów)

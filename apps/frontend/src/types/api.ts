@@ -24,6 +24,7 @@ export interface PlayerDto {
   buildings: BuildingDto[];
   cards: CardDto[];
   profession: string | null;
+  joinOrder: number;
   order: number;
 }
 

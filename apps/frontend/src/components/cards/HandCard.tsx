@@ -6,6 +6,7 @@ interface HandCardProps {
   card: CardDto;
   selected?: boolean;
   onPress?: () => void;
+  disabled?: boolean;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -20,6 +21,7 @@ export const HandCard = ({
   card,
   selected = false,
   onPress,
+  disabled = false,
   size = 'md',
   className,
 }: HandCardProps) => {
@@ -44,7 +46,7 @@ export const HandCard = ({
           elevation: 5,
           borderWidth: selected ? 3 : 0,
           borderColor: selected ? '#60A5FA' : 'transparent',
-          opacity: selected ? 1 : 1,
+          opacity: disabled && !selected ? 0.45 : 1,
         },
       ]}
     >
@@ -104,7 +106,11 @@ export const HandCard = ({
 
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={{ opacity: 1 }}>
+      <Pressable
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        style={{ opacity: 1, cursor: disabled ? 'default' : 'pointer' }}
+      >
         {cardContent}
       </Pressable>
     );
