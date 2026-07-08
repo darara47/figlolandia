@@ -5,10 +5,10 @@
   "author": "",
   "license": "ISC",
   "scripts": {
-    "dev": "pnpm -r dev",
+    "dev": "pnpm --parallel -r dev",
     "build": "pnpm -r build",
     "fe": "pnpm --filter ./apps/frontend start",
-    "be": "pnpm --filter ./apps/backend start"
+    "be": "pnpm --filter ./apps/backend start:dev"
   },
   "packageManager": "pnpm@10.27.0"
 }
