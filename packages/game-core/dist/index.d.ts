@@ -15,6 +15,8 @@ export interface Player {
     professionAbilityUsed: boolean;
     protected: boolean;
     delayedBuildings: boolean;
+    deferredBuildActions: PlayerAction[];
+    urbanistPendingBuildBoost: boolean;
     buildingsBuiltThisRound: number;
 }
 export interface Building {
@@ -47,7 +49,7 @@ export interface GameState {
     seed: number;
     winner: string | null;
     pendingActions: Map<string, PlayerAction[]>;
-    cheaperCategory?: BuildingCategory;
+    taxedCategory?: BuildingCategory;
     spiedHands?: Map<string, Card[]>;
     planningPhaseStartTime?: number;
 }
@@ -61,8 +63,7 @@ export interface PlayerAction {
     professionAbility?: boolean;
     theftTarget?: 'gold' | 'card';
     inspectTarget?: string;
-    cheaperCategory?: BuildingCategory;
-    increasedValueBuildingId?: string;
+    taxedCategory?: BuildingCategory;
 }
 export type ActionType = 'build' | 'use_profession' | 'pass';
 export declare const BUILDING_DATA: Record<BuildingType, {
@@ -74,6 +75,8 @@ export declare const PROFESSION_DATA: Record<Profession, {
     name: string;
     category: string;
 }>;
+export { ResolutionDebug, isResolutionDebugEnabled } from './resolution-debug';
+export type { GoldLedgerEntry, ResolutionDebugEvent, ResolutionDebugPhase } from './resolution-debug';
 export declare class RoundEngine {
     /**
      * Rozstrzyga akcje graczy w fazie RESOLUTION
@@ -81,9 +84,8 @@ export declare class RoundEngine {
      */
     static resolveRound(state: GameState, actions: Map<string, PlayerAction[]>): GameState;
     /**
-     * Zastosuj zdolności zawodowe przed akcjami
-     * WAŻNE: Polityk musi być rozstrzygany jako pierwszy (według kolejności),
-     * aby zniżka była dostępna dla wszystkich graczy podczas budowy
+     * Zastosuj zdolności zawodowe przed akcjami.
+     * Kolejność: Polityk → Dyplomata → Sabotażysta → pozostałe (lucky, inspector, spy, urbanist).
      */
     private static applyProfessionAbilities;
     /**
@@ -99,10 +101,10 @@ export declare class RoundEngine {
      * @param rng SeededRNG - musi być przekazany z backendu
      */
     static resolveRandomEvents(players: Player[], state: GameState, rng: any): void;
-    private static resolveSabotage;
+    private static resolveBuildings;
+    private static executeBuildActions;
     private static resolveTheft;
     private static resolveDestruction;
-    private static resolveBuildings;
     /**
      * Sprawdza warunki zwycięstwa
      */
@@ -115,10 +117,16 @@ export declare function generatePlayerId(): string;
  * @param existingPins Zbiór istniejących PIN-ów do uniknięcia kolizji
  */
 export declare function generateGamePin(existingPins?: Set<string>): string;
+/** Zawody tymczasowo wyłączone z losowania (niedokończone mechaniki) */
+export declare const HIDDEN_PROFESSIONS: readonly Profession[];
 /**
- * Pobiera wszystkie zawody
+ * Pobiera wszystkie zawody (w tym ukryte)
  */
 export declare function getAllProfessions(): Profession[];
+/**
+ * Pobiera zawody dostępne do losowania w grze
+ */
+export declare function getAssignableProfessions(): Profession[];
 /**
  * Kolory kategorii budynków (hex)
  * Używane do stylizacji kart w UI

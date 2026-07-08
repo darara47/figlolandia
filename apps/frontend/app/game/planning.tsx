@@ -7,8 +7,16 @@ import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
 import { HandCard } from '@/src/components/cards/HandCard';
 import { PlayerCard } from '@/src/components/player/PlayerCard';
-import { PROFESSION_DATA } from '@figlolandia/game-core';
+import { PROFESSION_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { CardDto } from '@/src/types/api';
+
+const TAX_CATEGORIES: { id: string; label: string }[] = [
+  { id: 'education', label: 'Edukacja' },
+  { id: 'health', label: 'Zdrowie' },
+  { id: 'finance', label: 'Finanse' },
+  { id: 'administration', label: 'Administracja' },
+  { id: 'entertainment', label: 'Rozrywka' },
+];
 
 export default function PlanningScreen() {
   const {
@@ -27,6 +35,7 @@ export default function PlanningScreen() {
   const [handExpanded, setHandExpanded] = useState(false);
   const [selectedProfessionTargetId, setSelectedProfessionTargetId] = useState<string | null>(null);
   const [thiefTheftTarget, setThiefTheftTarget] = useState<'gold' | 'card'>('gold');
+  const [selectedTaxCategory, setSelectedTaxCategory] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number>(600000); // 10 minut w milisekundach
 
   const myPlanningStatus = playerId ? planningStatus[playerId] : undefined;
@@ -53,6 +62,7 @@ export default function PlanningScreen() {
     setSelectedCards(new Set());
     setSelectedProfessionTargetId(null);
     setThiefTheftTarget('gold');
+    setSelectedTaxCategory(null);
     setLocalBuildSubmitted(false);
     setLocalAbilitySubmitted(false);
   }, [round]);
@@ -75,11 +85,14 @@ export default function PlanningScreen() {
     return p === 'saboteur' || p === 'vandal' || p === 'thief' || p === 'inspector' || p === 'spy';
   })();
 
+  const professionRequiresCategory = me?.profession === 'politician';
+  const professionRequiresChoice = professionRequiresPlayerTarget || professionRequiresCategory;
+
   const canConfirmProfessionAbility =
     canAbilityInteract &&
-    professionRequiresPlayerTarget &&
     !!playerId &&
-    !!selectedProfessionTargetId;
+    ((professionRequiresPlayerTarget && !!selectedProfessionTargetId) ||
+      (professionRequiresCategory && !!selectedTaxCategory));
 
   // Timer dla fazy PLANNING
   useEffect(() => {
@@ -189,20 +202,33 @@ export default function PlanningScreen() {
     if (!gameId) return;
     if (!playerId) return;
     if (!canAbilityInteract) return;
-    if (!professionRequiresPlayerTarget) return;
-    if (!selectedProfessionTargetId) return;
-
-    const professionAction = {
-      type: 'use_profession',
-      professionAbility: true,
-      target: selectedProfessionTargetId,
-      theftTarget: me?.profession === 'thief' ? thiefTheftTarget : undefined,
-    } as const;
+    if (!professionRequiresChoice) return;
+    if (professionRequiresPlayerTarget && !selectedProfessionTargetId) return;
+    if (professionRequiresCategory && !selectedTaxCategory) return;
 
     confirmAbility({
       gameId,
       abilityAction: {
-        ...professionAction,
+        type: 'use_profession',
+        professionAbility: true,
+        target: professionRequiresPlayerTarget ? selectedProfessionTargetId ?? undefined : undefined,
+        theftTarget: me?.profession === 'thief' ? thiefTheftTarget : undefined,
+        taxedCategory: professionRequiresCategory ? selectedTaxCategory ?? undefined : undefined,
+      },
+    });
+    setLocalAbilitySubmitted(true);
+  };
+
+  const handleSkipAbility = () => {
+    if (!gameId) return;
+    if (!playerId) return;
+    if (!canAbilityInteract) return;
+
+    confirmAbility({
+      gameId,
+      abilityAction: {
+        type: 'use_profession',
+        professionAbility: false,
       },
     });
     setLocalAbilitySubmitted(true);
@@ -216,11 +242,11 @@ export default function PlanningScreen() {
   const targetPlayers = playerId ? sortedPlayers.filter((p) => p.id !== playerId) : [];
 
   // Koszt budowy karty = wartość budynku z uwzględnieniem zniżki własnego zawodu.
-  // Łowca okazji buduje o 2 taniej (minimum 1).
+  // Łowca okazji buduje o 2 taniej (minimum 0).
   const getCardCost = (card: CardDto): number => {
     let cost = card.buildingValue;
     if (me?.profession === 'opportunity_hunter') {
-      cost = Math.max(1, cost - 2);
+      cost = Math.max(0, cost - 2);
     }
     return cost;
   };
@@ -261,6 +287,7 @@ export default function PlanningScreen() {
             isMe={player.id === playerId}
             style={styles.playerCard}
             hasSubmitted={submittedPlayers.has(player.id)}
+            showProfession={false}
           />
         ))}
       </ScrollView>
@@ -371,31 +398,88 @@ export default function PlanningScreen() {
                       {getProfessionDescription(me?.profession || '')}
                     </Text>
 
-                    {professionRequiresPlayerTarget ? (
+                    {professionRequiresChoice ? (
                       <>
-                        <Text style={styles.targetLabel}>Wybierz gracza (cel)</Text>
-                        <View style={styles.targetList}>
-                          {targetPlayers.map((p) => {
-                            const selected = selectedProfessionTargetId === p.id;
-                            return (
+                        {professionRequiresPlayerTarget && (
+                          <>
+                            <Text style={styles.targetLabel}>Wybierz gracza (cel)</Text>
+                            <View style={styles.targetList}>
+                              {targetPlayers.map((p) => {
+                                const selected = selectedProfessionTargetId === p.id;
+                                return (
+                                  <Pressable
+                                    key={p.id}
+                                    disabled={!canAbilityInteract}
+                                    onPress={
+                                      canAbilityInteract
+                                        ? () => setSelectedProfessionTargetId(p.id)
+                                        : undefined
+                                    }
+                                    style={[
+                                      styles.targetButton,
+                                      selected && styles.targetButtonSelected,
+                                    ]}
+                                  >
+                                    <Text style={styles.targetButtonText}>{p.name}</Text>
+                                  </Pressable>
+                                );
+                              })}
                               <Pressable
-                                key={p.id}
-                                disabled={!canAbilityInteract}
+                                disabled={!canAbilityInteract || localAbilitySubmitted}
                                 onPress={
-                                  canAbilityInteract
-                                    ? () => setSelectedProfessionTargetId(p.id)
+                                  canAbilityInteract && !localAbilitySubmitted
+                                    ? handleSkipAbility
                                     : undefined
                                 }
                                 style={[
                                   styles.targetButton,
-                                  selected && styles.targetButtonSelected,
+                                  styles.skipAbilityButton,
+                                  (!canAbilityInteract || localAbilitySubmitted) && styles.targetButtonDisabled,
                                 ]}
                               >
-                                <Text style={styles.targetButtonText}>{p.name}</Text>
+                                <Text style={styles.targetButtonText}>Pomiń</Text>
                               </Pressable>
-                            );
-                          })}
-                        </View>
+                            </View>
+                          </>
+                        )}
+
+                        {professionRequiresCategory && (
+                          <>
+                            <Text style={styles.targetLabel}>Wybierz kategorię do opodatkowania</Text>
+                            <View style={styles.categoryList}>
+                              {TAX_CATEGORIES.map((cat) => {
+                                const selected = selectedTaxCategory === cat.id;
+                                const hasSelection = selectedTaxCategory !== null;
+                                const dimmed = hasSelection && !selected;
+                                const categoryColor =
+                                  CATEGORY_COLORS[cat.id as keyof typeof CATEGORY_COLORS] ||
+                                  '#6B7280';
+                                return (
+                                  <Pressable
+                                    key={cat.id}
+                                    disabled={!canAbilityInteract}
+                                    onPress={
+                                      canAbilityInteract
+                                        ? () => setSelectedTaxCategory(cat.id)
+                                        : undefined
+                                    }
+                                    style={[
+                                      styles.categoryButton,
+                                      {
+                                        backgroundColor: categoryColor,
+                                        opacity: !canAbilityInteract ? 0.4 : dimmed ? 0.45 : 1,
+                                        borderWidth: selected ? 3 : 0,
+                                        borderColor: selected ? '#60A5FA' : 'transparent',
+                                      },
+                                    ]}
+                                  >
+                                    <Text style={styles.targetButtonText}>{cat.label}</Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          </>
+                        )}
 
                         {me?.profession === 'thief' && (
                           <View style={styles.targetSelector}>
@@ -440,7 +524,7 @@ export default function PlanningScreen() {
                       <Text style={styles.autoStepText}>Zdolność: auto</Text>
                     )}
 
-                    {professionRequiresPlayerTarget && serverAbilityConfirmed && (
+                    {professionRequiresChoice && serverAbilityConfirmed && (
                       <Text style={styles.stepConfirmedText}>✓ Zdolność potwierdzona</Text>
                     )}
                   </Card>
@@ -462,12 +546,12 @@ function getProfessionDescription(profession: string): string {
     accountant: 'Księgowy – jeśli na koniec rundy masz mniej niż 2 złotki, otrzymujesz +2 złotki',
     builder: 'Budowlaniec – może wybudować +1 budynek',
     architect: 'Architekt – może zmienić kategorię budynku',
-    urbanist: 'Urbanista – wybiera budynek którego wartość zwiększa się o 1',
+    urbanist: 'Urbanista – budynek o najniższej wartości +1 (lub pierwszy wybudowany w rundzie, jeśli nie masz budynków)',
     vandal: 'Wandal – niszczy wartość budynku przeciwnika o 2',
     thief: 'Złodziej – kradnie 2 złotki lub losową kartę budynku z ręki przeciwnika',
     saboteur: 'Sabotażysta – blokuje zdolność przeciwnika',
     spy: 'Szpieg – podgląda rękę innego gracza',
-    politician: 'Polityk – wybiera kategorię budynków, które w tej rundzie są tańsze o 1 złotko',
+    politician: 'Polityk – nakłada podatek na wybraną kategorię: zyskuje +1 złotko za każdy budynek wybudowany w niej przez innych graczy w tej rundzie',
     diplomat: 'Dyplomata – nie może być celem negatywnych działań w tej rundzie (sam nie atakuje)',
     inspector: 'Inspektor – wskazuje gracza, którego budynki zostaną wybudowane dopiero w kolejnej rundzie',
   };
@@ -655,6 +739,18 @@ const styles = StyleSheet.create({
   targetList: {
     flexDirection: 'row',
   },
+  categoryList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 0,
+    marginBottom: 0,
+  },
   targetButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -665,9 +761,17 @@ const styles = StyleSheet.create({
   targetButtonSelected: {
     backgroundColor: '#2563EB',
   },
+  targetButtonDisabled: {
+    opacity: 0.4,
+  },
   targetButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
+  },
+  skipAbilityButton: {
+    backgroundColor: '#6B7280',
+    borderWidth: 1,
+    borderColor: '#9CA3AF',
   },
   professionButton: {
     marginTop: 8,

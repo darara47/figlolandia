@@ -154,6 +154,12 @@ pnpm test:e2e
 
 Wspólny pakiet zawierający logikę gry, używany zarówno przez backend jak i frontend.
 
+## 📖 Dokumentacja gry
+
+Reguły gry, zawody, budynki i architektura WebSocket:
+
+→ [docs/README.md](docs/README.md)
+
 ## 🔧 Konfiguracja
 
 ### TypeScript

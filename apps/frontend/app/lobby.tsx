@@ -247,11 +247,19 @@ export default function LobbyScreen() {
             </View>
 
             <View style={styles.configRow}>
-              <Text style={styles.configLabel}>Częstotliwość zdarzeń (0-1)</Text>
+              <Text style={styles.configLabel}>Częstotliwość zdarzeń (0-100%)</Text>
               <Input
-                value={config.eventFrequency?.toString() || '0.3'}
-                onChangeText={(text) => updateConfig({ eventFrequency: parseFloat(text) || 0.3 })}
-                keyboardType="decimal-pad"
+                value={config.eventFrequency !== undefined ? String(config.eventFrequency) : '0'}
+                onChangeText={(text) => {
+                  const digitsOnly = text.replace(/\D/g, '');
+                  if (digitsOnly === '') {
+                    updateConfig({ eventFrequency: 0 });
+                    return;
+                  }
+                  const parsed = Math.min(100, parseInt(digitsOnly, 10));
+                  updateConfig({ eventFrequency: Number.isFinite(parsed) ? parsed : 0 });
+                }}
+                keyboardType="number-pad"
                 style={styles.configInput}
               />
             </View>

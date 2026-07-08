@@ -11,11 +11,12 @@ interface PlayerCardProps {
   isMe?: boolean;
   className?: string;
   style?: ViewStyle;
-  hasSubmitted?: boolean; // Czy gracz zatwierdził swój ruch (w fazie PLANNING)
-  narrativeEvents?: NarrativeEvent[]; // Wydarzenia narratora dla animacji
+  hasSubmitted?: boolean;
+  narrativeEvents?: NarrativeEvent[];
+  showProfession?: boolean;
 }
 
-export const PlayerCard = ({ player, isMe = false, style, hasSubmitted = false, narrativeEvents = [] }: PlayerCardProps) => {
+export const PlayerCard = ({ player, isMe = false, style, hasSubmitted = false, narrativeEvents = [], showProfession = true }: PlayerCardProps) => {
   const professionData = player.profession
     ? PROFESSION_DATA[player.profession as keyof typeof PROFESSION_DATA]
     : null;
@@ -76,7 +77,7 @@ export const PlayerCard = ({ player, isMe = false, style, hasSubmitted = false, 
         )}
       </View>
 
-      {professionData && (
+      {showProfession && professionData && (
         <View style={styles.professionSection}>
           <Text style={styles.professionLabel}>Zawód:</Text>
           <Text style={styles.professionName}>{professionData.name}</Text>

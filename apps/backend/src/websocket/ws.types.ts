@@ -23,7 +23,7 @@ export interface SubmitActionsPayload {
     professionAbility?: boolean;
     theftTarget?: 'gold' | 'card';
     inspectTarget?: string;
-    cheaperCategory?: string;
+    taxedCategory?: string;
     increasedValueBuildingId?: string;
   }>;
 }
@@ -43,17 +43,22 @@ export interface ConfirmBuildPayload {
 // Potwierdzenie wyboru zdolności specjalnej w fazie PLANNING
 export interface ConfirmAbilityPayload {
   gameId: string;
-  abilityAction: {
+  abilityAction:
+  | {
     type: 'use_profession';
     professionAbility: true;
     target?: string;
     theftTarget?: 'gold' | 'card';
     inspectTarget?: string;
-    cheaperCategory?: string;
+    taxedCategory?: string;
     increasedValueBuildingId?: string;
     buildingCategory?: string;
     buildingType?: string;
     cardId?: string;
+  }
+  | {
+    type: 'use_profession';
+    professionAbility: false;
   };
 }
 

@@ -334,7 +334,7 @@ export class GameGateway
         professionAbility: a.professionAbility,
         theftTarget: a.theftTarget,
         inspectTarget: a.inspectTarget,
-        cheaperCategory: a.cheaperCategory as any,
+        taxedCategory: a.taxedCategory as any,
         increasedValueBuildingId: a.increasedValueBuildingId,
       }));
 
@@ -431,7 +431,7 @@ export class GameGateway
         professionAbility: undefined,
         theftTarget: undefined,
         inspectTarget: undefined,
-        cheaperCategory: undefined,
+        taxedCategory: undefined,
         increasedValueBuildingId: undefined,
       }));
 
@@ -501,19 +501,34 @@ export class GameGateway
         throw new Error(`Nie można wysłać zdolności w fazie ${instance.state.phase}. Wymagana faza: PLANNING`);
       }
 
-      const abilityAction = {
-        type: payload.abilityAction.type as any,
-        target: payload.abilityAction.target,
-        cardId: payload.abilityAction.cardId,
-        buildingType: payload.abilityAction.buildingType as any,
-        buildingCategory: payload.abilityAction.buildingCategory as any,
-        buildingValue: undefined,
-        professionAbility: payload.abilityAction.professionAbility,
-        theftTarget: payload.abilityAction.theftTarget,
-        inspectTarget: payload.abilityAction.inspectTarget,
-        cheaperCategory: payload.abilityAction.cheaperCategory as any,
-        increasedValueBuildingId: payload.abilityAction.increasedValueBuildingId,
-      };
+      const { abilityAction: raw } = payload;
+      const abilityAction = raw.professionAbility
+        ? {
+          type: raw.type as any,
+          professionAbility: true as const,
+          target: raw.target,
+          cardId: raw.cardId,
+          buildingType: raw.buildingType as any,
+          buildingCategory: raw.buildingCategory as any,
+          buildingValue: undefined,
+          theftTarget: raw.theftTarget,
+          inspectTarget: raw.inspectTarget,
+          taxedCategory: raw.taxedCategory as any,
+          increasedValueBuildingId: raw.increasedValueBuildingId,
+        }
+        : {
+          type: raw.type as any,
+          professionAbility: false as const,
+          target: undefined,
+          cardId: undefined,
+          buildingType: undefined,
+          buildingCategory: undefined,
+          buildingValue: undefined,
+          theftTarget: undefined,
+          inspectTarget: undefined,
+          taxedCategory: undefined,
+          increasedValueBuildingId: undefined,
+        };
 
       const gameState = this.gameService.confirmAbility(
         payload.gameId,

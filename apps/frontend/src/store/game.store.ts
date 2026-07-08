@@ -13,7 +13,7 @@ interface PlayerAction {
   professionAbility?: boolean;
   theftTarget?: 'gold' | 'card';
   inspectTarget?: string;
-  cheaperCategory?: string;
+  taxedCategory?: string;
 }
 
 interface GameStore {
@@ -59,7 +59,7 @@ export const useGameStore = create<GameStore>((set) => ({
   config: {
     maxRounds: 10,
     victoryThreshold: 50,
-    eventFrequency: 0.3,
+    eventFrequency: 0,
   },
 
   updateFromServer: (payload, playerId) => {
@@ -126,7 +126,7 @@ export const useGameStore = create<GameStore>((set) => ({
       config: {
         maxRounds: 10,
         victoryThreshold: 50,
-        eventFrequency: 0.3,
+        eventFrequency: 0,
       },
     });
   },

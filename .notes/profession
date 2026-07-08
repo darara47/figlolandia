@@ -1,0 +1,12 @@
+Wandal - działa poprawnie.
+Budowlaniec - działa poprawnie.
+Inwestor - działa poprawnie.
+Złodziej - działa poprawnie.
+
+Szczęściarz - nie działa, brak otrzymanego złota.
+Inspektor - zamiast opóźniać budowe do kolejnej rundy jest całkowicie pomijane.
+Dyplomata - nie obronił, inspektor skutecznie zablokował, obrona powinna mieć najwyższy priorytet.
+Urbanista - nie zadziałało, wartość budynków nie zmieniła się, budynek o najniższej wartości powinien wzrosnąć.
+Sabotażysta - nie działa, nie zablokował gracza Inspektor, powinno mieć drugi najwyższy priorytet po dyplomacie.
+Architek - nie działa, nie można nic wybrać, ani zmienić. [to discuss]
+Szpieg - nie działa, nie ma podglądu. [to discuss]

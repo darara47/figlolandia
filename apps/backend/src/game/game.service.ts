@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import {
   GameState,
   GameConfig,
@@ -9,7 +9,8 @@ import {
   BuildingCategory,
   Card,
   BUILDING_DATA,
-  getAllProfessions,
+  getAssignableProfessions,
+  ResolutionDebug,
 } from '@figlolandia/game-core';
 import { GameStateManager } from './game.state';
 import { SeededRNG } from '../utils/rng';
@@ -28,6 +29,7 @@ type PlanningStep = {
  */
 @Injectable()
 export class GameService {
+  private readonly logger = new Logger(GameService.name);
   private readonly PLANNING_TIMEOUT = 600000; // 10 minut (600000 ms)
   private planningTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
@@ -76,9 +78,9 @@ export class GameService {
         throw new BadRequestException('Próg zwycięstwa musi być większy od 0');
       }
 
-      if (state.config.eventFrequency < 0 || state.config.eventFrequency > 1) {
+      if (state.config.eventFrequency < 0 || state.config.eventFrequency > 100) {
         throw new BadRequestException(
-          'Częstotliwość zdarzeń musi być między 0 a 1'
+          'Częstotliwość zdarzeń musi być między 0 a 100'
         );
       }
     }
@@ -105,6 +107,21 @@ export class GameService {
    */
   private prepareRound(state: GameState): void {
     const rng = new SeededRNG(state.seed + state.round);
+    ResolutionDebug.configure(state.gameId, state.round);
+    ResolutionDebug.log(
+      'PREP',
+      'start',
+      `Przygotowanie rundy ${state.round}`,
+      {
+        players: state.players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          gold: p.gold,
+          profession: p.profession,
+          deferredBuilds: p.deferredBuildActions.length,
+        })),
+      },
+    );
 
     // Reset stanów zawodów
     state.players.forEach((player) => {
@@ -115,7 +132,7 @@ export class GameService {
     });
 
     // 1. Losuj zawody (bez powtórzenia z poprzedniej rundy i bez duplikatów w tej samej rundzie)
-    const allProfessions = getAllProfessions();
+    const allProfessions = getAssignableProfessions();
     const assignedProfessions: Set<string> = new Set();
 
     state.players.forEach((player) => {
@@ -142,12 +159,25 @@ export class GameService {
       if (player.profession) {
         assignedProfessions.add(player.profession);
         player.lastProfession = player.profession;
+        ResolutionDebug.log(
+          'PREP',
+          'profession',
+          `${player.name}: przypisano zawód ${player.profession}`,
+        );
       }
     });
 
     // 2. Rozdaj złotki: każdy gracz otrzymuje 2 złotki
     state.players.forEach((player) => {
+      const goldBefore = player.gold;
       player.gold += 2;
+      ResolutionDebug.logGoldChange(
+        'PREP',
+        'base_income',
+        player,
+        goldBefore,
+        player.gold,
+      );
     });
 
     // 3. Rozdaj karty budynków: każdy gracz otrzymuje 1 kartę budynku
@@ -201,16 +231,37 @@ export class GameService {
       (p) => p.order === state.players.length - 1
     );
     if (lastPlayer) {
+      const goldBefore = lastPlayer.gold;
       lastPlayer.gold += 1;
+      ResolutionDebug.logGoldChange(
+        'PREP',
+        'last_in_order',
+        lastPlayer,
+        goldBefore,
+        lastPlayer.gold,
+        { order: lastPlayer.order },
+      );
     }
+
+    ResolutionDebug.log(
+      'PREP',
+      'order',
+      'Kolejność rozstrzygania',
+      {
+        players: state.players
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((p) => ({ name: p.name, id: p.id, order: p.order })),
+      },
+    );
 
     // 6. Rozstrzygnij zdarzenia losowe (przed fazą PLANNING)
     // UWAGA: Zdarzenia losowe mogą dać bonus złota (1-3) losowemu graczowi,
     // co może powodować różnice w złocie między graczami
     RoundEngine.resolveRandomEvents(state.players, state, rng);
 
-    // Reset tańszej kategorii (Polityk)
-    state.cheaperCategory = undefined;
+    // Reset opodatkowanej kategorii (Polityk)
+    state.taxedCategory = undefined;
 
     // Wyczyść podglądnięte ręce (Szpieg)
     if (state.spiedHands) {
@@ -219,6 +270,9 @@ export class GameService {
 
     // Wyczyść poprzednie akcje
     state.pendingActions.clear();
+
+    ResolutionDebug.logGoldSnapshot('PREP', 'end', state.players);
+    ResolutionDebug.flushSummary(`PREP round ${state.round}`);
   }
 
   /**
@@ -253,10 +307,14 @@ export class GameService {
         profession === 'thief' ||
         profession === 'inspector' ||
         profession === 'spy';
+      // Polityk nie wskazuje gracza, ale musi wybrać opodatkowaną kategorię,
+      // więc jego zdolność również wymaga jawnego zatwierdzenia.
+      const abilityRequiresChoice =
+        abilityRequiresPlayerTarget || profession === 'politician';
 
       planningSteps.set(player.id, {
         buildConfirmed: false,
-        abilityConfirmed: !abilityRequiresPlayerTarget,
+        abilityConfirmed: !abilityRequiresChoice,
         buildActions: [],
         abilityActions: [],
       });
@@ -510,7 +568,7 @@ export class GameService {
         if (player.profession === 'inspector' && !action.target) {
           throw new BadRequestException('Inspektor wymaga celu');
         }
-        if (player.profession === 'politician' && !action.cheaperCategory) {
+        if (player.profession === 'politician' && !action.taxedCategory) {
           throw new BadRequestException('Polityk wymaga wyboru kategorii');
         }
         if (player.profession === 'spy' && !action.target) {
@@ -560,16 +618,53 @@ export class GameService {
     // Dzięki temu RoundEngine dostaje kompletne akcje (build + ability) niezależnie od kolejności kliknięć.
     const planningSteps = this.planningStepsByGame.get(gameId);
     if (planningSteps) {
+      const autoAbilityProfessions = new Set(['lucky', 'diplomat', 'urbanist']);
       state.pendingActions.clear();
       for (const p of state.players) {
         const step = planningSteps.get(p.id);
-        const combined = [
-          ...(step?.buildActions || []),
-          ...(step?.abilityActions || []),
-        ];
+        let abilityActions = step?.abilityActions || [];
+        const autoInjected =
+          step?.abilityConfirmed &&
+          abilityActions.length === 0 &&
+          !!p.profession &&
+          autoAbilityProfessions.has(p.profession);
+        if (autoInjected) {
+          abilityActions = [{ type: 'use_profession', professionAbility: true }];
+        }
+        const combined = [...(step?.buildActions || []), ...abilityActions];
         state.pendingActions.set(p.id, combined);
+
+        ResolutionDebug.configure(state.gameId, state.round);
+        ResolutionDebug.log(
+          'RESOLUTION',
+          'planning_input',
+          `${p.name}: akcje wejściowe do RoundEngine`,
+          {
+            profession: p.profession,
+            buildConfirmed: step?.buildConfirmed ?? false,
+            abilityConfirmed: step?.abilityConfirmed ?? false,
+            buildActions: step?.buildActions ?? [],
+            abilityActionsBeforeInject: step?.abilityActions ?? [],
+            autoInjected,
+            combined,
+          },
+        );
       }
+    } else {
+      ResolutionDebug.configure(state.gameId, state.round);
+      ResolutionDebug.log(
+        'RESOLUTION',
+        'planning_input',
+        'Brak planningSteps — używam istniejących pendingActions',
+        {
+          actions: Object.fromEntries([...state.pendingActions.entries()]),
+        },
+      );
     }
+
+    this.logger.log(
+      `Rozpoczynam RESOLUTION gry ${gameId}, runda ${state.round}`,
+    );
 
     // Zapisz stan przed rozstrzygnięciem (dla narratora)
     const beforeState = JSON.parse(JSON.stringify(state));

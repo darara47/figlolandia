@@ -26,7 +26,7 @@ export class LobbyService {
   private readonly DEFAULT_CONFIG: GameConfig = {
     maxRounds: 10,
     victoryThreshold: 50,
-    eventFrequency: 0.3,
+    eventFrequency: 0,
     minPlayers: 3,
     maxPlayers: 8,
   };
@@ -70,6 +70,8 @@ export class LobbyService {
       professionAbilityUsed: false,
       protected: false,
       delayedBuildings: false,
+      deferredBuildActions: [],
+      urbanistPendingBuildBoost: false,
       buildingsBuiltThisRound: 0,
     };
 
@@ -165,6 +167,8 @@ export class LobbyService {
       professionAbilityUsed: false,
       protected: false,
       delayedBuildings: false,
+      deferredBuildActions: [],
+      urbanistPendingBuildBoost: false,
       buildingsBuiltThisRound: 0,
     };
 

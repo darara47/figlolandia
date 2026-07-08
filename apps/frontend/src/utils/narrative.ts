@@ -70,9 +70,9 @@ export const translateNarrativeEvent = (event: NarrativeEvent): string => {
     case 'saboteur':
       return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Blokuje zdolność zawodową gracza <b>${event.data?.targetName}</b>.`;
 
-    case 'politician_cheaper_category': {
+    case 'politician_tax_category': {
       const categoryName = getCategoryName(event.data?.category || '');
-      return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Ustanawia kategorię ${categoryName} jako tańszą o 1 monetę w tej rundzie.`;
+      return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Nakłada podatek na kategorię ${categoryName} – zyskuje 1 monetę za każdy budynek wybudowany w niej przez innych graczy w tej rundzie.`;
     }
 
     case 'spy':
@@ -80,6 +80,15 @@ export const translateNarrativeEvent = (event: NarrativeEvent): string => {
 
     case 'inspector':
       return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Opóźnia budynki gracza <b>${event.data?.targetName}</b> do następnej rundy.`;
+
+    case 'lucky':
+      return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Otrzymuje +${event.data?.goldGained ?? 2} złota.`;
+
+    case 'diplomat':
+      return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Aktywuje ochronę przed negatywnymi efektami w tej rundzie.`;
+
+    case 'urbanist':
+      return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Zwiększa wartość budynku${event.data?.buildingName ? ` ${event.data.buildingName}` : ''} o 1.`;
 
     case 'profession_ability':
       return `Gracz <b>${event.playerName}</b> jest <b>${professionName.toLowerCase()}</b>. Korzysta z zdolności specjalnej${event.data?.professionName ? ` (${event.data.professionName})` : ''}.`;

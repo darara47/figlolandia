@@ -61,7 +61,7 @@ export class GameConfigResponseDto {
   @ApiProperty({ example: 50 })
   victoryThreshold: number;
 
-  @ApiProperty({ example: 0.3 })
+  @ApiProperty({ example: 0, description: 'Częstotliwość zdarzeń (0-100%)' })
   eventFrequency: number;
 
   @ApiProperty({ example: 3 })

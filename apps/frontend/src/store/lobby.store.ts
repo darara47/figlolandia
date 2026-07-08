@@ -27,7 +27,7 @@ export const useLobbyStore = create<LobbyStore>((set) => ({
   config: {
     maxRounds: 10,
     victoryThreshold: 50,
-    eventFrequency: 0.3,
+    eventFrequency: 0,
     minPlayers: 3,
     maxPlayers: 8,
   },
@@ -71,7 +71,7 @@ export const useLobbyStore = create<LobbyStore>((set) => ({
       config: {
         maxRounds: 10,
         victoryThreshold: 50,
-        eventFrequency: 0.3,
+        eventFrequency: 0,
         minPlayers: 3,
         maxPlayers: 8,
       },

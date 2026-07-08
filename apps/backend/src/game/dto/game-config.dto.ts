@@ -5,6 +5,7 @@ import {
   Min,
   Max,
   ValidateIf,
+  IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -38,16 +39,16 @@ export class GameConfigDto {
   victoryThreshold?: number;
 
   @ApiProperty({
-    description: 'Częstotliwość zdarzeń (0-1)',
-    example: 0.3,
+    description: 'Częstotliwość zdarzeń (0-100%)',
+    example: 0,
     minimum: 0,
-    maximum: 1,
+    maximum: 100,
     required: false,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(0)
-  @Max(1)
+  @Max(100)
   @Type(() => Number)
   eventFrequency?: number;
 

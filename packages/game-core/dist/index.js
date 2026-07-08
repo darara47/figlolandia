@@ -1,10 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CATEGORY_COLORS = exports.RoundEngine = exports.PROFESSION_DATA = exports.BUILDING_DATA = void 0;
+exports.CATEGORY_COLORS = exports.HIDDEN_PROFESSIONS = exports.RoundEngine = exports.isResolutionDebugEnabled = exports.ResolutionDebug = exports.PROFESSION_DATA = exports.BUILDING_DATA = void 0;
 exports.generateGameId = generateGameId;
 exports.generatePlayerId = generatePlayerId;
 exports.generateGamePin = generateGamePin;
 exports.getAllProfessions = getAllProfessions;
+exports.getAssignableProfessions = getAssignableProfessions;
 exports.getCategoryColor = getCategoryColor;
 exports.getBuildingsByCategory = getBuildingsByCategory;
 // Building Data
@@ -63,6 +64,10 @@ exports.PROFESSION_DATA = {
     diplomat: { name: 'Dyplomata', category: 'Władza / Obrona' },
     inspector: { name: 'Inspektor', category: 'Władza / Obrona' },
 };
+const resolution_debug_1 = require("./resolution-debug");
+var resolution_debug_2 = require("./resolution-debug");
+Object.defineProperty(exports, "ResolutionDebug", { enumerable: true, get: function () { return resolution_debug_2.ResolutionDebug; } });
+Object.defineProperty(exports, "isResolutionDebugEnabled", { enumerable: true, get: function () { return resolution_debug_2.isResolutionDebugEnabled; } });
 // Round Engine - główna logika rozstrzygania
 class RoundEngine {
     /**
@@ -74,85 +79,186 @@ class RoundEngine {
         const players = [...newState.players];
         // Sortuj graczy według kolejności rozstrzygania
         const sortedPlayers = [...players].sort((a, b) => a.order - b.order);
-        // Reset stanów zawodów na początku rundy
+        resolution_debug_1.ResolutionDebug.configure(state.gameId, state.round);
+        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'start', `Rozpoczęcie rozstrzygania rundy ${state.round}`, {
+            players: sortedPlayers.map((p) => ({
+                id: p.id,
+                name: p.name,
+                profession: p.profession,
+                gold: p.gold,
+                order: p.order,
+                deferredBuilds: p.deferredBuildActions.length,
+            })),
+            actions: Object.fromEntries([...actions.entries()].map(([playerId, playerActions]) => [
+                playerId,
+                playerActions,
+            ])),
+        });
+        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'start', sortedPlayers);
+        // Reset flag bieżącej rundy (deferredBuildActions przetrwa do wykonania w kroku budowy)
         sortedPlayers.forEach((p) => {
             p.professionAbilityUsed = false;
             p.protected = false;
             p.delayedBuildings = false;
+            p.urbanistPendingBuildBoost = false;
             p.buildingsBuiltThisRound = 0;
         });
         // Uwaga: Zdarzenia losowe są teraz rozstrzygane w fazie PREP, przed PLANNING
-        // 2. Zastosuj zdolności zawodowe (przed akcjami)
+        // 2. Zdolności zawodowe (Polityk → Dyplomata → Sabotażysta → reszta)
         this.applyProfessionAbilities(sortedPlayers, actions, newState);
-        // 3. Sabotaż / blokady
-        this.resolveSabotage(sortedPlayers, actions, newState);
-        // 4. Kradzieże
+        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_abilities', sortedPlayers);
+        // 3. Kradzieże
         this.resolveTheft(sortedPlayers, actions, newState);
-        // 5. Niszczenie budynków
+        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_theft', sortedPlayers);
+        // 4. Niszczenie budynków
         this.resolveDestruction(sortedPlayers, actions, newState);
-        // 6. Budowy (najniższy priorytet)
+        // 5. Budowy (najniższy priorytet)
         this.resolveBuildings(sortedPlayers, actions, newState);
-        // 7. Zastosuj efekty końcowe zawodów (np. Księgowy)
+        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_builds', sortedPlayers);
+        // 6. Zastosuj efekty końcowe zawodów (np. Księgowy)
         this.applyEndOfRoundAbilities(sortedPlayers, newState);
+        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_end_abilities', sortedPlayers);
+        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'flags', 'Stan flag po rozstrzygnięciu', {
+            players: sortedPlayers.map((p) => ({
+                id: p.id,
+                name: p.name,
+                profession: p.profession,
+                professionAbilityUsed: p.professionAbilityUsed,
+                protected: p.protected,
+                delayedBuildings: p.delayedBuildings,
+                urbanistPendingBuildBoost: p.urbanistPendingBuildBoost,
+                deferredBuildActions: p.deferredBuildActions.length,
+                buildingsBuiltThisRound: p.buildingsBuiltThisRound,
+            })),
+            taxedCategory: newState.taxedCategory,
+        });
         newState.players = sortedPlayers;
+        resolution_debug_1.ResolutionDebug.flushSummary(`RESOLUTION round ${state.round}`);
         return newState;
     }
     /**
-     * Zastosuj zdolności zawodowe przed akcjami
-     * WAŻNE: Polityk musi być rozstrzygany jako pierwszy (według kolejności),
-     * aby zniżka była dostępna dla wszystkich graczy podczas budowy
+     * Zastosuj zdolności zawodowe przed akcjami.
+     * Kolejność: Polityk → Dyplomata → Sabotażysta → pozostałe (lucky, inspector, spy, urbanist).
      */
     static applyProfessionAbilities(players, actions, state) {
-        // Najpierw rozstrzygnij Polityka (jeśli istnieje), aby ustawić tańszą kategorię
+        const findProfessionAction = (playerId) => {
+            const playerActions = actions.get(playerId) || [];
+            return playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
+        };
+        // 1. Polityk — ustawia opodatkowaną kategorię przed fazą budowy
         const politicianPlayer = players.find((p) => p.profession === 'politician');
         if (politicianPlayer) {
-            const politicianActions = actions.get(politicianPlayer.id) || [];
-            const politicianAction = politicianActions.find((a) => a.type === 'use_profession' && a.professionAbility);
-            if (politicianAction && politicianAction.cheaperCategory) {
-                state.cheaperCategory = politicianAction.cheaperCategory;
+            const politicianAction = findProfessionAction(politicianPlayer.id);
+            if (politicianAction?.taxedCategory) {
+                state.taxedCategory = politicianAction.taxedCategory;
                 politicianPlayer.professionAbilityUsed = true;
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.politician', `${politicianPlayer.name}: opodatkowana kategoria = ${politicianAction.taxedCategory}`);
+            }
+            else {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.politician', `${politicianPlayer.name}: brak akcji lub brak taxedCategory — pominięto`, { action: politicianAction ?? null });
             }
         }
-        // Następnie rozstrzygnij pozostałe zdolności zawodowe
+        // 2. Dyplomata — najwyższy priorytet obrony
         for (const player of players) {
-            // Pomiń Polityka (już rozstrzygnięty)
-            if (player.profession === 'politician')
+            if (player.profession !== 'diplomat' || player.professionAbilityUsed)
                 continue;
-            const playerActions = actions.get(player.id) || [];
-            const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
-            if (!professionAction || !player.profession)
+            const professionAction = findProfessionAction(player.id);
+            if (!professionAction) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.diplomat', `${player.name}: brak akcji use_profession — pominięto`);
                 continue;
+            }
+            player.protected = true;
+            player.professionAbilityUsed = true;
+            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.diplomat', `${player.name}: protected=true`);
+        }
+        // 3. Sabotażysta — blokuje zdolność zawodową celu
+        for (const player of players) {
+            if (player.profession !== 'saboteur' || player.professionAbilityUsed)
+                continue;
+            const professionAction = findProfessionAction(player.id);
+            if (!professionAction?.target) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.saboteur', `${player.name}: brak celu — pominięto`, { action: professionAction ?? null });
+                continue;
+            }
+            const target = players.find((p) => p.id === professionAction.target);
+            if (target && !target.protected) {
+                target.professionAbilityUsed = true;
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.saboteur', `${player.name} → ${target.name}: professionAbilityUsed=true (cel zablokowany)`);
+            }
+            else {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.saboteur', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony (protected)'} — brak blokady`);
+            }
+            player.professionAbilityUsed = true;
+        }
+        // 4. Pozostałe zdolności pre-action
+        for (const player of players) {
+            if (player.profession === 'politician' ||
+                player.profession === 'diplomat' ||
+                player.profession === 'saboteur' ||
+                player.professionAbilityUsed) {
+                if (player.profession &&
+                    !['politician', 'diplomat', 'saboteur'].includes(player.profession) &&
+                    player.professionAbilityUsed) {
+                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.skip', `${player.name} (${player.profession}): pominięto — professionAbilityUsed=true (np. przez Sabotażystę)`);
+                }
+                continue;
+            }
+            const professionAction = findProfessionAction(player.id);
+            if (!professionAction || !player.profession) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.skip', `${player.name} (${player.profession ?? 'brak'}): brak akcji use_profession — pominięto`);
+                continue;
+            }
             switch (player.profession) {
-                case 'lucky':
-                    // Szczęściarz: +2 złotki na start rundy
+                case 'lucky': {
+                    const goldBefore = player.gold;
                     player.gold += 2;
+                    resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'abilities.lucky', player, goldBefore, player.gold);
                     break;
-                case 'diplomat':
-                    // Dyplomata: nie może być celem negatywnych działań (sam nie atakuje)
-                    player.protected = true;
-                    break;
+                }
                 case 'inspector':
-                    // Inspektor: wskazuje gracza, którego budynki są opóźnione
-                    if (professionAction.target) {
-                        const target = players.find((p) => p.id === professionAction.target);
-                        if (target) {
-                            target.delayedBuildings = true;
-                        }
-                    }
-                    break;
-                case 'spy':
-                    // Szpieg: podgląda rękę innego gracza
                     if (professionAction.target) {
                         const target = players.find((p) => p.id === professionAction.target);
                         if (target && !target.protected) {
-                            // Zapisz podglądniętą rękę w stanie gry (tymczasowo)
+                            target.delayedBuildings = true;
+                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.inspector', `${player.name} → ${target.name}: delayedBuildings=true`);
+                        }
+                        else {
+                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.inspector', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — brak opóźnienia`);
+                        }
+                    }
+                    else {
+                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.inspector', `${player.name}: brak celu — pominięto`);
+                    }
+                    break;
+                case 'spy':
+                    if (professionAction.target) {
+                        const target = players.find((p) => p.id === professionAction.target);
+                        if (target && !target.protected) {
                             if (!state.spiedHands) {
                                 state.spiedHands = new Map();
                             }
-                            // Skopiuj karty celu (głęboka kopia)
-                            state.spiedHands.set(player.id, target.cards.map(card => ({ ...card })));
+                            state.spiedHands.set(player.id, target.cards.map((card) => ({ ...card })));
+                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.spy', `${player.name} → ${target.name}: podgląd ${target.cards.length} kart`);
+                        }
+                        else {
+                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.spy', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — pominięto`);
                         }
                     }
+                    break;
+                case 'urbanist':
+                    if (player.buildings.length > 0) {
+                        const lowestBuilding = player.buildings.reduce((lowest, current) => current.value < lowest.value ? current : lowest);
+                        const valueBefore = lowestBuilding.value;
+                        lowestBuilding.value = Math.min(5, lowestBuilding.value + 1);
+                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.urbanist', `${player.name}: ${lowestBuilding.type} wartość ${valueBefore}→${lowestBuilding.value}`);
+                    }
+                    else {
+                        player.urbanistPendingBuildBoost = true;
+                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.urbanist', `${player.name}: brak budynków — urbanistPendingBuildBoost=true`);
+                    }
+                    break;
+                default:
+                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.other', `${player.name} (${player.profession}): zdolność rozstrzygana w innym kroku`);
                     break;
             }
             player.professionAbilityUsed = true;
@@ -169,7 +275,12 @@ class RoundEngine {
                 case 'accountant':
                     // Księgowy: jeśli na koniec rundy ma mniej niż 2 złotki, otrzymuje +2
                     if (player.gold < 2) {
+                        const goldBefore = player.gold;
                         player.gold += 2;
+                        resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'end.accountant', player, goldBefore, player.gold);
+                    }
+                    else {
+                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'end.accountant', `${player.name}: gold=${player.gold} (>=2) — brak bonusu`);
                     }
                     break;
             }
@@ -185,34 +296,114 @@ class RoundEngine {
      */
     static resolveRandomEvents(players, state, rng // SeededRNG - przekazywany z backendu (nie możemy importować z backendu)
     ) {
-        // Sprawdź czy zdarzenie ma się wydarzyć (zgodnie z eventFrequency)
-        if (rng.random() >= state.config.eventFrequency) {
-            return; // Brak zdarzenia w tej rundzie
+        const roll = rng.random();
+        const threshold = state.config.eventFrequency / 100;
+        if (roll >= threshold) {
+            resolution_debug_1.ResolutionDebug.log('PREP', 'random_event', `Brak zdarzenia losowego (roll=${roll.toFixed(4)}, threshold=${threshold})`);
+            return;
         }
-        // W MVP: prosta implementacja zdarzeń losowych
-        // W pełnej wersji można dodać różne typy zdarzeń:
-        // - Bonus złota dla wszystkich
-        // - Kary dla wybranych graczy
-        // - Specjalne efekty
-        // - itp.
-        // Przykład: Losowe zdarzenie - bonus złota dla losowego gracza
         const randomPlayer = rng.randomChoice(players);
-        const bonus = rng.randomInt(1, 3); // 1-3 złota
+        const bonus = rng.randomInt(1, 3);
+        const goldBefore = randomPlayer.gold;
         randomPlayer.gold += bonus;
+        resolution_debug_1.ResolutionDebug.logGoldChange('PREP', 'random_event', randomPlayer, goldBefore, randomPlayer.gold, { roll, threshold, bonus });
     }
-    static resolveSabotage(players, actions, state) {
-        // Sabotażysta: blokuje zdolność przeciwnika
+    static resolveBuildings(players, actions, state) {
+        const politicianPlayer = players.find((p) => p.profession === 'politician');
+        // Najpierw wykonaj budowy odłożone przez Inspektora w poprzedniej rundzie
         for (const player of players) {
-            if (player.profession !== 'saboteur')
+            if (player.deferredBuildActions.length === 0)
                 continue;
+            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.deferred', `${player.name}: wykonuję ${player.deferredBuildActions.length} odłożonych budów`, { actions: player.deferredBuildActions });
+            this.executeBuildActions(player, player.deferredBuildActions, state, politicianPlayer, 'deferred');
+            player.deferredBuildActions = [];
+        }
+        // Budowa budynków zaplanowanych na bieżącą rundę
+        for (const player of players) {
             const playerActions = actions.get(player.id) || [];
-            const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
-            if (!professionAction || !professionAction.target)
+            const maxBuildings = player.profession === 'builder' ? 2 : 1;
+            const buildActions = playerActions
+                .filter((a) => a.type === 'build')
+                .slice(0, maxBuildings);
+            if (player.delayedBuildings) {
+                player.deferredBuildActions.push(...buildActions);
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.delayed', `${player.name}: opóźniono ${buildActions.length} budów (Inspektor) → deferredBuildActions`, { actions: buildActions });
                 continue;
-            const target = players.find((p) => p.id === professionAction.target);
-            if (target && !target.protected) {
-                // Blokuj zdolność zawodową celu
-                target.professionAbilityUsed = true;
+            }
+            this.executeBuildActions(player, buildActions, state, politicianPlayer, 'current');
+            // Architekt: może zmienić kategorię budynku
+            if (player.profession === 'architect') {
+                const architectAction = playerActions.find((a) => a.type === 'use_profession' &&
+                    a.professionAbility &&
+                    a.buildingCategory);
+                if (architectAction?.buildingType) {
+                    const lastBuilding = player.buildings[player.buildings.length - 1];
+                    if (lastBuilding && architectAction.buildingCategory) {
+                        const oldCategory = lastBuilding.category;
+                        lastBuilding.category = architectAction.buildingCategory;
+                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.architect', `${player.name}: ${lastBuilding.type} kategoria ${oldCategory}→${architectAction.buildingCategory}`);
+                    }
+                }
+            }
+        }
+    }
+    static executeBuildActions(player, buildActions, state, politicianPlayer, source) {
+        for (const buildAction of buildActions) {
+            if (!buildAction.buildingType)
+                continue;
+            const buildingData = exports.BUILDING_DATA[buildAction.buildingType];
+            if (!buildingData)
+                continue;
+            const card = buildAction.cardId
+                ? player.cards.find((c) => c.id === buildAction.cardId)
+                : null;
+            const baseValue = buildAction.buildingValue ||
+                (card ? card.buildingValue : null) ||
+                buildingData.valueRange[0];
+            let cost = baseValue;
+            if (player.profession === 'opportunity_hunter') {
+                cost = Math.max(0, cost - 2);
+            }
+            if (player.gold < cost) {
+                const skipMessage = `[RoundEngine] Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
+                    `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
+                console.warn(skipMessage);
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.skip', skipMessage, { source, baseValue, cost, profession: player.profession });
+                continue;
+            }
+            const goldBefore = player.gold;
+            player.gold -= cost;
+            resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', `build.cost.${source}`, player, goldBefore, player.gold, {
+                buildingType: buildAction.buildingType,
+                baseValue,
+                cost,
+                opportunityHunter: player.profession === 'opportunity_hunter',
+            });
+            let buildingValue = baseValue;
+            if (player.urbanistPendingBuildBoost && player.buildingsBuiltThisRound === 0) {
+                buildingValue = Math.min(5, buildingValue + 1);
+                player.urbanistPendingBuildBoost = false;
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.urbanist_boost', `${player.name}: +1 wartość pierwszego budynku w rundzie (${baseValue}→${buildingValue})`);
+            }
+            const buildingId = `building-${Date.now()}-${Math.random()}`;
+            player.buildings.push({
+                id: buildingId,
+                type: buildAction.buildingType,
+                category: buildingData.category,
+                value: buildingValue,
+            });
+            player.buildingsBuiltThisRound++;
+            resolution_debug_1.ResolutionDebug.log('RESOLUTION', `build.success.${source}`, `${player.name}: wybudowano ${buildAction.buildingType} (wartość=${buildingValue}, kategoria=${buildingData.category})`);
+            if (politicianPlayer &&
+                player.id !== politicianPlayer.id &&
+                state.taxedCategory === buildingData.category) {
+                const politicianGoldBefore = politicianPlayer.gold;
+                politicianPlayer.gold += 1;
+                resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'build.politician_tax', politicianPlayer, politicianGoldBefore, politicianPlayer.gold, {
+                    builder: player.name,
+                    buildingType: buildAction.buildingType,
+                    taxedCategory: state.taxedCategory,
+                });
             }
         }
     }
@@ -223,22 +414,32 @@ class RoundEngine {
                 continue;
             const playerActions = actions.get(player.id) || [];
             const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
-            if (!professionAction || !professionAction.target)
+            if (!professionAction || !professionAction.target) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.skip', `${player.name}: brak akcji lub celu — pominięto`);
                 continue;
+            }
             const target = players.find((p) => p.id === professionAction.target);
-            if (!target || target.protected)
+            if (!target || target.protected) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.skip', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — pominięto`);
                 continue;
+            }
             if (professionAction.theftTarget === 'gold') {
-                // Kradzież złota
                 const stolen = Math.min(target.gold, 2);
+                const targetGoldBefore = target.gold;
+                const thiefGoldBefore = player.gold;
                 target.gold -= stolen;
                 player.gold += stolen;
+                resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'theft.gold', target, targetGoldBefore, target.gold, { thief: player.name, stolen });
+                resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'theft.gold', player, thiefGoldBefore, player.gold, { target: target.name, stolen });
             }
             else if (professionAction.theftTarget === 'card') {
-                // Kradzież karty
                 if (target.cards.length > 0) {
                     const stolenCard = target.cards.pop();
                     player.cards.push(stolenCard);
+                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.card', `${player.name} → ${target.name}: skradziono kartę ${stolenCard.name}`);
+                }
+                else {
+                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.card', `${player.name} → ${target.name}: cel nie ma kart — pominięto`);
                 }
             }
         }
@@ -250,95 +451,19 @@ class RoundEngine {
                 continue;
             const playerActions = actions.get(player.id) || [];
             const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
-            if (!professionAction || !professionAction.target)
+            if (!professionAction || !professionAction.target) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal.skip', `${player.name}: brak akcji lub celu — pominięto`);
                 continue;
+            }
             const target = players.find((p) => p.id === professionAction.target);
-            if (!target || target.protected || target.buildings.length === 0)
+            if (!target || target.protected || target.buildings.length === 0) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal.skip', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : target.protected ? 'chroniony' : 'bez budynków'} — pominięto`);
                 continue;
-            // Znajdź budynek o najwyższej wartości
+            }
             const building = target.buildings.reduce((best, current) => current.value > best.value ? current : best);
-            // Zmniejsz wartość o 2 (minimum 0)
+            const valueBefore = building.value;
             building.value = Math.max(0, building.value - 2);
-        }
-    }
-    static resolveBuildings(players, actions, state) {
-        // Budowa budynków
-        for (const player of players) {
-            // Pomiń jeśli budynki są opóźnione (Inspektor)
-            if (player.delayedBuildings)
-                continue;
-            const playerActions = actions.get(player.id) || [];
-            // Limit budynków na rundę: Budowlaniec może wybudować +1 (2), pozostali 1.
-            const maxBuildings = player.profession === 'builder' ? 2 : 1;
-            const buildActions = playerActions
-                .filter((a) => a.type === 'build')
-                .slice(0, maxBuildings);
-            for (const buildAction of buildActions) {
-                if (!buildAction.buildingType)
-                    continue;
-                const buildingData = exports.BUILDING_DATA[buildAction.buildingType];
-                if (!buildingData)
-                    continue;
-                // Oblicz koszt budowy
-                // Znajdź kartę jeśli podano cardId
-                const card = buildAction.cardId
-                    ? player.cards.find((c) => c.id === buildAction.cardId)
-                    : null;
-                let cost = buildAction.buildingValue ||
-                    (card ? card.buildingValue : null) ||
-                    buildingData.valueRange[0];
-                // Polityk: tańsza kategoria (dla wszystkich graczy)
-                if (state.cheaperCategory === buildingData.category) {
-                    cost = Math.max(0, cost - 1);
-                }
-                // Łowca okazji: budowa kosztuje o 2 mniej
-                if (player.profession === 'opportunity_hunter') {
-                    cost = Math.max(1, cost - 2);
-                }
-                // Sprawdź czy gracz ma wystarczająco złota.
-                // Fallback: jeśli gracza nie stać, budowa jest pomijana, a informacja trafia do logów.
-                if (player.gold < cost) {
-                    console.warn(`[RoundEngine] Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
-                        `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`);
-                    continue;
-                }
-                {
-                    player.gold -= cost;
-                    const buildingId = `building-${Date.now()}-${Math.random()}`;
-                    let buildingValue = cost; // wartość = koszt budowy
-                    // Urbanista: wybiera budynek którego wartość zwiększa się o 1
-                    // Zwiększamy wartość pierwszego budynku wybudowanego w rundzie przez Urbanistę
-                    if (player.profession === 'urbanist' && player.buildingsBuiltThisRound === 0) {
-                        const urbanistAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
-                        if (urbanistAction) {
-                            // Zwiększ wartość budynku o 1 (maksymalnie 5)
-                            buildingValue = Math.min(5, buildingValue + 1);
-                        }
-                    }
-                    player.buildings.push({
-                        id: buildingId,
-                        type: buildAction.buildingType,
-                        category: buildingData.category,
-                        value: buildingValue,
-                    });
-                    player.buildingsBuiltThisRound++;
-                }
-            }
-            // Budowlaniec: może wybudować +1 budynek (już zbudowane w powyższej pętli)
-            // To jest obsłużone przez możliwość wysłania wielu akcji build
-            // Architekt: może zmienić kategorię budynku
-            if (player.profession === 'architect') {
-                const architectAction = playerActions.find((a) => a.type === 'use_profession' &&
-                    a.professionAbility &&
-                    a.buildingCategory);
-                if (architectAction && architectAction.buildingType) {
-                    // Zmień kategorię ostatniego wybudowanego budynku
-                    const lastBuilding = player.buildings[player.buildings.length - 1];
-                    if (lastBuilding && architectAction.buildingCategory) {
-                        lastBuilding.category = architectAction.buildingCategory;
-                    }
-                }
-            }
+            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal', `${player.name} → ${target.name}: ${building.type} wartość ${valueBefore}→${building.value}`);
         }
     }
     /**
@@ -395,11 +520,20 @@ function generateGamePin(existingPins) {
     } while (existingPins && existingPins.has(pin));
     return pin;
 }
+/** Zawody tymczasowo wyłączone z losowania (niedokończone mechaniki) */
+exports.HIDDEN_PROFESSIONS = ['architect', 'spy'];
 /**
- * Pobiera wszystkie zawody
+ * Pobiera wszystkie zawody (w tym ukryte)
  */
 function getAllProfessions() {
     return Object.keys(exports.PROFESSION_DATA);
+}
+/**
+ * Pobiera zawody dostępne do losowania w grze
+ */
+function getAssignableProfessions() {
+    const hidden = new Set(exports.HIDDEN_PROFESSIONS);
+    return getAllProfessions().filter((profession) => !hidden.has(profession));
 }
 /**
  * Kolory kategorii budynków (hex)

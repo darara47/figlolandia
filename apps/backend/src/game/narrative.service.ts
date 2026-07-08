@@ -34,7 +34,7 @@ export class NarrativeService {
           const afterBuilding = afterState.players
             .find((p) => p.id === player.id)
             ?.buildings.find((b) => b.type === buildAction.buildingType);
-          
+
           if (afterBuilding) {
             // Oblicz koszt budowy
             const card = buildAction.cardId
@@ -46,11 +46,8 @@ export class NarrativeService {
 
             // Sprawdź czy zastosowano zniżki
             let finalCost = cost;
-            if (afterState.cheaperCategory === buildingData.category) {
-              finalCost = Math.max(1, finalCost - 1);
-            }
             if (player.profession === 'opportunity_hunter') {
-              finalCost = Math.max(1, finalCost - 2);
+              finalCost = Math.max(0, finalCost - 2);
             }
 
             events.push({
@@ -140,6 +137,79 @@ export class NarrativeService {
             }
             break;
 
+          case 'inspector':
+            if (profAction.target) {
+              const target = afterState.players.find((p) => p.id === profAction.target);
+              if (target && target.deferredBuildActions.length > 0) {
+                events.push({
+                  type: 'inspector',
+                  playerId: player.id,
+                  playerName: player.name,
+                  profession: player.profession,
+                  data: {
+                    targetId: profAction.target,
+                    targetName: target.name,
+                  },
+                  timestamp: timestamp + events.length * 10,
+                });
+              }
+            }
+            break;
+
+          case 'lucky':
+            if (afterState.players.find((p) => p.id === player.id)!.gold > beforePlayer.gold) {
+              events.push({
+                type: 'lucky',
+                playerId: player.id,
+                playerName: player.name,
+                profession: player.profession,
+                data: {
+                  goldGained: afterState.players.find((p) => p.id === player.id)!.gold - beforePlayer.gold,
+                },
+                timestamp: timestamp + events.length * 10,
+              });
+            }
+            break;
+
+          case 'diplomat':
+            events.push({
+              type: 'diplomat',
+              playerId: player.id,
+              playerName: player.name,
+              profession: player.profession,
+              data: {},
+              timestamp: timestamp + events.length * 10,
+            });
+            break;
+
+          case 'urbanist': {
+            const afterPlayer = afterState.players.find((p) => p.id === player.id);
+            const boostedBuilding = afterPlayer?.buildings.find((afterBuilding) => {
+              const beforeBuilding = beforePlayer.buildings.find((b) => b.id === afterBuilding.id);
+              return beforeBuilding && afterBuilding.value > beforeBuilding.value;
+            });
+            const newBuildingWithBoost =
+              afterPlayer &&
+              afterPlayer.buildings.length > beforePlayer.buildings.length &&
+              afterPlayer.buildings[afterPlayer.buildings.length - 1];
+
+            events.push({
+              type: 'urbanist',
+              playerId: player.id,
+              playerName: player.name,
+              profession: player.profession,
+              data: {
+                buildingName: boostedBuilding
+                  ? BUILDING_DATA[boostedBuilding.type].name
+                  : newBuildingWithBoost
+                    ? BUILDING_DATA[newBuildingWithBoost.type].name
+                    : undefined,
+              },
+              timestamp: timestamp + events.length * 10,
+            });
+            break;
+          }
+
           case 'saboteur':
             if (profAction.target) {
               const target = afterState.players.find((p) => p.id === profAction.target);
@@ -160,14 +230,14 @@ export class NarrativeService {
             break;
 
           case 'politician':
-            if (profAction.cheaperCategory) {
+            if (profAction.taxedCategory) {
               events.push({
-                type: 'politician_cheaper_category',
+                type: 'politician_tax_category',
                 playerId: player.id,
                 playerName: player.name,
                 profession: player.profession,
                 data: {
-                  category: profAction.cheaperCategory,
+                  category: profAction.taxedCategory,
                 },
                 timestamp: timestamp + events.length * 10,
               });
@@ -193,27 +263,7 @@ export class NarrativeService {
             }
             break;
 
-          case 'inspector':
-            if (profAction.target) {
-              const target = afterState.players.find((p) => p.id === profAction.target);
-              if (target) {
-                events.push({
-                  type: 'inspector',
-                  playerId: player.id,
-                  playerName: player.name,
-                  profession: player.profession,
-                  data: {
-                    targetId: profAction.target,
-                    targetName: target.name,
-                  },
-                  timestamp: timestamp + events.length * 10,
-                });
-              }
-            }
-            break;
-
           default:
-            // Dla innych zawodów po prostu zarejestruj użycie
             events.push({
               type: 'profession_ability',
               playerId: player.id,

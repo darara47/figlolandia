@@ -43,7 +43,6 @@ export const Narrator = ({ events }: NarratorProps) => {
 
     isTypingRef.current = true;
     displayedKeysRef.current.add(key);
-    setExpanded(true);
 
     const fullText = translateNarrativeEvent(event);
     let charIndex = 0;
