@@ -5,6 +5,7 @@ import { BUILDING_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { BuildingDto } from '@/src/types/api';
 import { getBuildingIcon } from '@/src/theme/buildingIcons';
 import { Text } from '@/src/components/ui/Text';
+import { ValueStars } from '@/src/components/design-system/ValueStars';
 import { colors, radius, shadows } from '@/src/theme/tokens';
 
 interface PlayerSkylineProps {
@@ -39,7 +40,6 @@ const SkylineBuilding = ({
   const Icon = getBuildingIcon(building.type);
   const scaleAnim = useRef(new Animated.Value(isNew ? 0.2 : 1)).current;
   const rotateAnim = useRef(new Animated.Value(isNew ? 0 : 1)).current;
-  const glowAnim = useRef(new Animated.Value(lit ? 1 : 0.25)).current;
   const hasAnimatedRef = useRef(false);
 
   useEffect(() => {
@@ -60,14 +60,6 @@ const SkylineBuilding = ({
       ]).start();
     }
   }, [isNew, scaleAnim, rotateAnim]);
-
-  useEffect(() => {
-    Animated.timing(glowAnim, {
-      toValue: lit ? 1 : 0.35,
-      duration: lit ? 400 : 200,
-      useNativeDriver: true,
-    }).start();
-  }, [lit, glowAnim]);
 
   const rotate = rotateAnim.interpolate({
     inputRange: [0, 0.6, 1],
@@ -100,12 +92,9 @@ const SkylineBuilding = ({
           <View style={styles.iconWrap}>
             <Icon color={categoryColor} size={dims.icon} strokeWidth={1.75} />
           </View>
-          <Animated.View
-            style={[
-              styles.windowGlow,
-              { backgroundColor: categoryColor, opacity: glowAnim },
-            ]}
-          />
+          <View style={styles.starsWrap}>
+            <ValueStars value={building.value} size="xs" />
+          </View>
         </View>
       </Animated.View>
     </Pressable>
@@ -118,7 +107,7 @@ export const PlayerSkyline = ({
   size = 'compact',
   className,
 }: PlayerSkylineProps) => {
-  const [tooltip, setTooltip] = useState<{ name: string; value: number } | null>(null);
+  const [tooltipBuildingId, setTooltipBuildingId] = useState<string | null>(null);
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const height = size === 'hero' ? 88 : 72;
 
@@ -133,6 +122,13 @@ export const PlayerSkyline = ({
       return next;
     });
   }, [buildings, highlightNew]);
+
+  const tooltipBuilding = tooltipBuildingId
+    ? buildings.find((building) => building.id === tooltipBuildingId)
+    : null;
+  const tooltipBuildingData = tooltipBuilding
+    ? BUILDING_DATA[tooltipBuilding.type as keyof typeof BUILDING_DATA]
+    : null;
 
   if (buildings.length === 0) {
     return (
@@ -155,9 +151,9 @@ export const PlayerSkyline = ({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
           <View className="flex-row items-end py-2" style={{ gap: 6 }}>
             {buildings.map((building) => {
-              const buildingData = BUILDING_DATA[building.type as keyof typeof BUILDING_DATA];
               const isNew = highlightNew.includes(building.id) && !seenIds.has(building.id);
               const lit = highlightNew.includes(building.id) || isNew;
+              const isTooltipActive = tooltipBuildingId === building.id;
 
               return (
                 <SkylineBuilding
@@ -167,10 +163,7 @@ export const PlayerSkyline = ({
                   isNew={isNew}
                   lit={lit}
                   onPress={() =>
-                    setTooltip({
-                      name: buildingData?.name ?? building.type,
-                      value: building.value,
-                    })
+                    setTooltipBuildingId(isTooltipActive ? null : building.id)
                   }
                 />
               );
@@ -179,10 +172,10 @@ export const PlayerSkyline = ({
         </ScrollView>
       </LinearGradient>
 
-      {tooltip && (
-        <Pressable onPress={() => setTooltip(null)} className="mt-1">
+      {tooltipBuilding && (
+        <Pressable onPress={() => setTooltipBuildingId(null)} className="mt-1">
           <Text variant="label">
-            {tooltip.name} — wartość {tooltip.value}
+            {tooltipBuildingData?.name ?? tooltipBuilding.type} — wartość {tooltipBuilding.value}
           </Text>
         </Pressable>
       )}
@@ -218,11 +211,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  windowGlow: {
-    position: 'absolute',
-    bottom: 4,
-    width: 10,
-    height: 6,
-    borderRadius: 2,
+  starsWrap: {
+    marginBottom: 2,
   },
 });

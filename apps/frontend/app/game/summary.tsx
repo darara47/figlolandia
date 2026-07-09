@@ -4,16 +4,12 @@ import { Card } from '@/src/components/ui/Card';
 import { Text } from '@/src/components/ui/Text';
 import { PlayerSkyline } from '@/src/components/design-system/PlayerSkyline';
 import { PlayerAvatar } from '@/src/components/design-system/PlayerAvatar';
-import { BuildingDto } from '@/src/types/api';
+import { getPlayerStats } from '@/src/utils/playerStats';
 
 export default function SummaryScreen() {
   const { players, winner, config } = useGameStore();
 
-  const sortedPlayers = [...players].sort((a, b) => {
-    const aValue = a.gold + a.buildings.reduce((sum: number, bld: BuildingDto) => sum + bld.value, 0);
-    const bValue = b.gold + b.buildings.reduce((sum: number, bld: BuildingDto) => sum + bld.value, 0);
-    return bValue - aValue;
-  });
+  const sortedPlayers = [...players].sort((a, b) => getPlayerStats(b).points - getPlayerStats(a).points);
 
   const winnerPlayer = winner ? players.find((p) => p.id === winner) : sortedPlayers[0];
 
@@ -40,8 +36,7 @@ export default function SummaryScreen() {
           Ranking graczy
         </Text>
         {sortedPlayers.map((player, index) => {
-          const cityValue =
-            player.gold + player.buildings.reduce((sum: number, bld: BuildingDto) => sum + bld.value, 0);
+          const { gold, buildingValue, points } = getPlayerStats(player);
           return (
             <Card key={player.id} className="mb-3">
               <View className="mb-3 flex-row items-center justify-between">
@@ -55,10 +50,12 @@ export default function SummaryScreen() {
                   </Text>
                 </View>
                 <View className="items-end">
-                  <Text variant="stat">{cityValue}</Text>
                   <Text variant="label" className="text-xs">
-                    {player.gold} zł +{' '}
-                    {player.buildings.reduce((sum: number, bld: BuildingDto) => sum + bld.value, 0)} budynki
+                    Punkty
+                  </Text>
+                  <Text variant="stat">{points}</Text>
+                  <Text variant="label" className="text-xs">
+                    {gold} zł + {buildingValue} budynki
                   </Text>
                 </View>
               </View>

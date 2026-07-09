@@ -5,9 +5,11 @@ import { BUILDING_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { CardDto, BuildingDto } from '@/src/types/api';
 import { getBuildingIcon } from '@/src/theme/buildingIcons';
 import { Text } from '@/src/components/ui/Text';
+import { ValueStars } from '@/src/components/design-system/ValueStars';
 import { colors, shadows, radius, fonts } from '@/src/theme/tokens';
 
 type CardSize = 'mini' | 'hand' | 'sm' | 'md' | 'lg';
+type CostVariant = 'default' | 'danger';
 
 interface BuildingCardProps {
   card?: CardDto;
@@ -18,6 +20,8 @@ interface BuildingCardProps {
   size?: CardSize;
   animate?: boolean;
   animationDelay?: number;
+  cost?: number;
+  costVariant?: CostVariant;
 }
 
 const sizeConfig: Record<CardSize, { width: number; height: number; icon: number; name: number }> = {
@@ -37,6 +41,8 @@ export const BuildingCard = ({
   size = 'hand',
   animate = false,
   animationDelay = 0,
+  cost,
+  costVariant = 'default',
 }: BuildingCardProps) => {
   const buildingType = card?.buildingType ?? building?.type ?? '';
   const buildingCategory = card?.buildingCategory ?? building?.category ?? 'education';
@@ -53,6 +59,12 @@ export const BuildingCard = ({
   const Icon = getBuildingIcon(buildingType);
   const borderColor = selected ? colors.brand.DEFAULT : categoryColor;
   const borderWidth = selected ? 3 : 2;
+  const showCostBadge = cost !== undefined;
+  const badgeGradient =
+    costVariant === 'danger'
+      ? ([colors.danger, '#FF8FA3'] as const)
+      : ([colors.gold.DEFAULT, colors.gold.glow] as const);
+  const badgeTextColor = costVariant === 'danger' ? colors.text.primary : colors.bg.base;
 
   const scaleAnim = useRef(new Animated.Value(animate ? 0.2 : 1)).current;
   const rotateAnim = useRef(new Animated.Value(animate ? 0 : 1)).current;
@@ -113,21 +125,20 @@ export const BuildingCard = ({
           },
         ]}
       >
-        <LinearGradient
-          colors={[colors.gold.DEFAULT, colors.gold.glow]}
-          style={styles.valueBadge}
-        >
-          <Text
-            style={{
-              color: colors.bg.base,
-              fontFamily: fonts.bodyBold,
-              fontSize: dims.name,
-              lineHeight: dims.name + 2,
-            }}
-          >
-            {buildingValue}
-          </Text>
-        </LinearGradient>
+        {showCostBadge && (
+          <LinearGradient colors={badgeGradient} style={styles.valueBadge}>
+            <Text
+              style={{
+                color: badgeTextColor,
+                fontFamily: fonts.bodyBold,
+                fontSize: dims.name,
+                lineHeight: dims.name + 2,
+              }}
+            >
+              {cost}
+            </Text>
+          </LinearGradient>
+        )}
 
         <View style={styles.iconArea}>
           <Icon color={categoryColor} size={dims.icon} strokeWidth={1.75} />
@@ -145,6 +156,10 @@ export const BuildingCard = ({
         >
           {buildingName}
         </Text>
+
+        <View style={styles.starsRow}>
+          <ValueStars value={buildingValue} size="sm" />
+        </View>
       </View>
     </Animated.View>
   );
@@ -195,6 +210,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 40,
+    minHeight: 32,
+  },
+  starsRow: {
+    marginTop: 2,
+    alignItems: 'center',
   },
 });

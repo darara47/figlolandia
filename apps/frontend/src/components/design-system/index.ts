@@ -1,4 +1,5 @@
 export { BuildingCard } from './BuildingCard';
+export { ValueStars } from './ValueStars';
 export { PlayerSkyline } from './PlayerSkyline';
 export { RoundTimer } from './RoundTimer';
 export { StatusPill } from './StatusPill';

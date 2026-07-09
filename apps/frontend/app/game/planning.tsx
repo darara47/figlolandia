@@ -321,18 +321,10 @@ export default function PlanningScreen() {
                             selected={isSelected}
                             disabled={cardDisabled}
                             size="hand"
+                            cost={cost}
+                            costVariant={cannotAfford ? 'danger' : 'default'}
                             onPress={() => handleCardSelect(card.id)}
                           />
-                          <Text
-                            variant="label"
-                            style={[
-                              styles.cardCost,
-                              cannotAfford && { color: colors.danger },
-                              isSelected && { color: colors.text.primary },
-                            ]}
-                          >
-                            Koszt: {cost} złota
-                          </Text>
                         </View>
                       );
                     })}
@@ -686,10 +678,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
     marginBottom: 12,
-  },
-  cardCost: {
-    marginTop: 4,
-    fontSize: 12,
   },
   buildCostInfo: {
     marginBottom: 12,

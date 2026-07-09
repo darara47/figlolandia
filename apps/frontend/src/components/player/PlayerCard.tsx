@@ -10,6 +10,7 @@ import { StatusPill } from '../design-system/StatusPill';
 import { NarrativeEvent } from '@/types/websocket';
 import { Building2 } from 'lucide-react-native';
 import { colors, spacing } from '@/src/theme/tokens';
+import { getPlayerStats } from '@/src/utils/playerStats';
 
 interface PlayerCardProps {
   player: PlayerDto;
@@ -36,7 +37,7 @@ export const PlayerCard = ({
     ? PROFESSION_DATA[player.profession as keyof typeof PROFESSION_DATA]
     : null;
 
-  const cityValue = player.gold + player.buildings.reduce((sum, b) => sum + b.value, 0);
+  const { buildingValue, points } = getPlayerStats(player);
 
   const playerEvents = narrativeEvents.filter((e) => e.playerId === player.id);
   const buildEvents = playerEvents.filter((e) => e.type === 'build');
@@ -91,19 +92,25 @@ export const PlayerCard = ({
       )}
 
       <View style={[styles.section, styles.statsRow]}>
-        <View>
+        <View style={styles.statColumn}>
           <Text variant="label">Złoto</Text>
           <Text variant="stat" style={{ color: colors.gold.DEFAULT }}>
             {displayedGold}
           </Text>
         </View>
-        <View style={styles.cityValueBlock}>
+        <View style={[styles.statColumn, styles.statColumnCenter]}>
           <Row gap={4} align="center">
             <Building2 color={colors.text.primary} size={14} />
-            <Text variant="label">Wartość miasta</Text>
+            <Text variant="label">Wartość budynków</Text>
           </Row>
-          <Text variant="stat" style={styles.cityValueNumber}>
-            {cityValue}
+          <Text variant="stat" style={styles.statNumber}>
+            {buildingValue}
+          </Text>
+        </View>
+        <View style={[styles.statColumn, styles.statColumnEnd]}>
+          <Text variant="label">Punkty</Text>
+          <Text variant="stat" style={styles.statNumber}>
+            {points}
           </Text>
         </View>
       </View>
@@ -138,12 +145,18 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  statColumn: {
+    flex: 1,
+  },
+  statColumnCenter: {
     alignItems: 'center',
   },
-  cityValueBlock: {
+  statColumnEnd: {
     alignItems: 'flex-end',
   },
-  cityValueNumber: {
+  statNumber: {
     marginTop: 4,
   },
   buildingsLabel: {
