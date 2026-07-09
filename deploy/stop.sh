@@ -10,11 +10,21 @@ require_pm2
 
 echo "Stopping Figlolandia staging..."
 
+<<<<<<< HEAD
 if pm2_process_exists "figlolandia"; then
   pm2 stop figlolandia
 else
   echo "Process figlolandia is not registered in PM2 — skipping."
 fi
+=======
+for process_name in figlolandia cloudflared; do
+  if pm2_process_exists "${process_name}"; then
+    pm2 stop "${process_name}"
+  else
+    echo "Process ${process_name} is not registered in PM2 — skipping."
+  fi
+done
+>>>>>>> ce136dd (Add deployment configuration and scripts for Figlolandia staging environment)
 
 echo ""
 pm2 list
