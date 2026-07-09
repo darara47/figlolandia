@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, ScrollView, Alert, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSocketStore } from '@/src/store/socket.store';
 import { useLobbyStore } from '@/src/store/lobby.store';
@@ -8,6 +8,12 @@ import { api } from '@/src/services/api';
 import { Button } from '@/src/components/ui/Button';
 import { Input } from '@/src/components/ui/Input';
 import { Card } from '@/src/components/ui/Card';
+import { Screen } from '@/src/components/ui/Screen';
+import { Text } from '@/src/components/ui/Text';
+import { CitySkylineBackground } from '@/src/components/design-system/CitySkylineBackground';
+import { Stack, Row } from '@/src/components/ui/Stack';
+import { spacing } from '@/src/theme/tokens';
+import { centeredForm, centeredScrollContent } from '@/src/theme/layout';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -16,20 +22,16 @@ export default function HomeScreen() {
   const [gamePin, setGamePin] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { isConnected, isConnecting, disconnect, setEventHandlers } = useSocketStore();
+  const { disconnect, setEventHandlers } = useSocketStore();
   const { setGame, reset: resetLobby } = useLobbyStore();
   const { reset: resetGame } = useGameStore();
 
-  // Powrót do głównego menu powinien czyścić stan klienta i “stare” eventy,
-  // żeby nie wylądować w poprzedniej grze.
   useEffect(() => {
     setEventHandlers({});
     disconnect();
     resetLobby();
     resetGame();
   }, [disconnect, resetGame, resetLobby, setEventHandlers]);
-
-  // NIE łączymy się automatycznie - tylko po dołączeniu do gry w lobby
 
   const handleCreateGame = async () => {
     if (!playerName.trim()) {
@@ -45,7 +47,7 @@ export default function HomeScreen() {
         response.gamePin,
         response.hostId,
         playerName.trim(),
-        true
+        true,
       );
       router.push('/lobby');
     } catch (error: any) {
@@ -74,7 +76,7 @@ export default function HomeScreen() {
         gamePin.trim(),
         response.playerId,
         playerName.trim(),
-        false
+        false,
       );
       router.push('/lobby');
     } catch (error: any) {
@@ -86,40 +88,38 @@ export default function HomeScreen() {
 
   if (mode === 'select') {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Figlolandia</Text>
-
-        <View style={styles.buttonContainer}>
-          <Button
-            variant="primary"
-            size="lg"
-            onPress={() => setMode('create')}
-          >
+      <Screen centered style={styles.homeScreen}>
+        <CitySkylineBackground />
+        <Text variant="display-xl" style={styles.homeTitle}>
+          Figlolandia
+        </Text>
+        <Stack gap={16} align="stretch" style={styles.homeButtons}>
+          <Button variant="primary" size="lg" onPress={() => setMode('create')}>
             Stwórz grę
           </Button>
-
-          <Button
-            variant="secondary"
-            size="lg"
-            onPress={() => setMode('join')}
-          >
+          <Button variant="secondary" size="lg" onPress={() => setMode('join')}>
             Dołącz do gry
           </Button>
-        </View>
-
-      </View>
+        </Stack>
+      </Screen>
     );
   }
 
   if (mode === 'create') {
     return (
-      <ScrollView style={styles.scrollContainer}>
-        <View style={styles.contentContainer}>
-          <Text style={styles.screenTitle}>Stwórz grę</Text>
-
-          <Card style={styles.cardContainer}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Nazwa gracza</Text>
+      <Screen>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={centeredScrollContent}
+        >
+          <Text variant="display" style={styles.formTitle}>
+            Stwórz grę
+          </Text>
+          <Card style={styles.formCard}>
+            <View style={styles.field}>
+              <Text variant="label" style={styles.fieldLabel}>
+                Nazwa gracza
+              </Text>
               <Input
                 value={playerName}
                 onChangeText={setPlayerName}
@@ -127,12 +127,11 @@ export default function HomeScreen() {
                 autoCapitalize="words"
               />
             </View>
-
-            <View style={styles.buttonRow}>
+            <Row gap={12}>
               <Button
                 variant="secondary"
                 onPress={() => setMode('select')}
-                style={{ flex: 1 }}
+                style={styles.halfButton}
                 disabled={loading}
               >
                 Wstecz
@@ -140,26 +139,32 @@ export default function HomeScreen() {
               <Button
                 variant="primary"
                 onPress={handleCreateGame}
-                style={{ flex: 1 }}
+                style={styles.halfButton}
                 disabled={loading || !playerName.trim()}
               >
                 {loading ? 'Tworzenie...' : 'Stwórz'}
               </Button>
-            </View>
+            </Row>
           </Card>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={styles.scrollContainer}>
-      <View style={styles.contentContainer}>
-        <Text style={styles.screenTitle}>Dołącz do gry</Text>
-
-        <Card className="w-full max-w-md">
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Nazwa gracza</Text>
+    <Screen>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={centeredScrollContent}
+      >
+        <Text variant="display" style={styles.formTitle}>
+          Dołącz do gry
+        </Text>
+        <Card style={styles.formCard}>
+          <View style={styles.field}>
+            <Text variant="label" style={styles.fieldLabel}>
+              Nazwa gracza
+            </Text>
             <Input
               value={playerName}
               onChangeText={setPlayerName}
@@ -167,9 +172,10 @@ export default function HomeScreen() {
               autoCapitalize="words"
             />
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>PIN gry</Text>
+          <View style={styles.field}>
+            <Text variant="label" style={styles.fieldLabel}>
+              PIN gry
+            </Text>
             <Input
               value={gamePin}
               onChangeText={setGamePin}
@@ -178,12 +184,11 @@ export default function HomeScreen() {
               maxLength={6}
             />
           </View>
-
-          <View style={styles.buttonRow}>
+          <Row gap={12}>
             <Button
               variant="secondary"
               onPress={() => setMode('select')}
-              className="flex-1"
+              style={styles.halfButton}
               disabled={loading}
             >
               Wstecz
@@ -191,75 +196,46 @@ export default function HomeScreen() {
             <Button
               variant="primary"
               onPress={handleJoinGame}
-              className="flex-1"
+              style={styles.halfButton}
               disabled={loading || !playerName.trim() || gamePin.trim().length !== 6}
             >
               {loading ? 'Łączenie...' : 'Dołącz'}
             </Button>
-          </View>
+          </Row>
         </Card>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
+  homeScreen: {
+    position: 'relative',
   },
-  scrollContainer: {
-    flex: 1,
-    backgroundColor: '#111827',
-  },
-  contentContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    minHeight: '100%',
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: 'bold',
+  homeTitle: {
     marginBottom: 32,
+    textAlign: 'center',
   },
-  screenTitle: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
+  homeButtons: {
+    ...centeredForm,
+  },
+  scroll: {
+    flex: 1,
+  },
+  formTitle: {
     marginBottom: 32,
+    textAlign: 'center',
   },
-  buttonContainer: {
-    width: '100%',
-    maxWidth: 400,
-    gap: 16,
+  formCard: {
+    ...centeredForm,
   },
-  statusContainer: {
-    marginTop: 32,
+  field: {
+    marginBottom: spacing.screen,
   },
-  statusText: {
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+  fieldLabel: {
     marginBottom: 8,
   },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cardContainer: {
-    width: '100%',
-    maxWidth: 400,
+  halfButton: {
+    flex: 1,
   },
 });

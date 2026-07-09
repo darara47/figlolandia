@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, Alert, StyleSheet } from 'react-native';
+import { View, ScrollView, Pressable, Alert, StyleSheet } from 'react-native';
 import { useGameStore } from '@/src/store/game.store';
 import { useSocketStore } from '@/src/store/socket.store';
 import { useLobbyStore } from '@/src/store/lobby.store';
 import { Button } from '@/src/components/ui/Button';
-import { Card } from '@/src/components/ui/Card';
+import { Row } from '@/src/components/ui/Stack';
+import { Text } from '@/src/components/ui/Text';
 import { HandCard } from '@/src/components/cards/HandCard';
 import { PlayerCard } from '@/src/components/player/PlayerCard';
+import { RoundTimer } from '@/src/components/design-system/RoundTimer';
+import { ProfessionPanel } from '@/src/components/design-system/ProfessionPanel';
+import { PlayerAvatar } from '@/src/components/design-system/PlayerAvatar';
 import { PROFESSION_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { CardDto } from '@/src/types/api';
+import { colors, radius, spacing } from '@/src/theme/tokens';
 
 const TAX_CATEGORIES: { id: string; label: string }[] = [
   { id: 'education', label: 'Edukacja' },
@@ -18,6 +23,8 @@ const TAX_CATEGORIES: { id: string; label: string }[] = [
   { id: 'entertainment', label: 'Rozrywka' },
 ];
 
+const PLANNING_TOTAL_MS = 600000;
+
 export default function PlanningScreen() {
   const {
     gameId,
@@ -25,7 +32,6 @@ export default function PlanningScreen() {
     round,
     players,
     me,
-    submittedPlayers,
     planningStatus,
     planningPhaseStartTime,
   } = useGameStore();
@@ -36,19 +42,15 @@ export default function PlanningScreen() {
   const [selectedProfessionTargetId, setSelectedProfessionTargetId] = useState<string | null>(null);
   const [thiefTheftTarget, setThiefTheftTarget] = useState<'gold' | 'card'>('gold');
   const [selectedTaxCategory, setSelectedTaxCategory] = useState<string | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState<number>(600000); // 10 minut w milisekundach
+  const [timeRemaining, setTimeRemaining] = useState<number>(PLANNING_TOTAL_MS);
 
   const myPlanningStatus = playerId ? planningStatus[playerId] : undefined;
   const serverBuildConfirmed = !!myPlanningStatus?.buildConfirmed;
   const serverAbilityConfirmed = !!myPlanningStatus?.abilityConfirmed;
 
-  // Flagi "in-flight": służą wyłącznie do zablokowania przycisku zaraz po kliknięciu
-  // (zanim serwer odeśle potwierdzenie), aby uniknąć podwójnego wysłania.
-  // Źródłem prawdy o potwierdzeniu ("Gotowy", ✓) jest ZAWSZE serwer.
   const [localBuildSubmitted, setLocalBuildSubmitted] = useState(false);
   const [localAbilitySubmitted, setLocalAbilitySubmitted] = useState(false);
 
-  // Gdy serwer cofnie potwierdzenie (np. nowa runda / reset kroków), zdejmij lokalną blokadę.
   useEffect(() => {
     if (!serverBuildConfirmed) setLocalBuildSubmitted(false);
   }, [serverBuildConfirmed]);
@@ -57,7 +59,6 @@ export default function PlanningScreen() {
     if (!serverAbilityConfirmed) setLocalAbilitySubmitted(false);
   }, [serverAbilityConfirmed]);
 
-  // Na zmianie rundy czyścimy lokalne wybory i blokady (nowy zawód, nowe karty, nowe cele).
   useEffect(() => {
     setSelectedCards(new Set());
     setSelectedProfessionTargetId(null);
@@ -71,12 +72,8 @@ export default function PlanningScreen() {
     ? PROFESSION_DATA[me.profession as keyof typeof PROFESSION_DATA]
     : null;
 
-  // Gating i wyświetlanie ✓ bazują wyłącznie na stanie serwera, więc lokalna
-  // flaga nie może zablokować gracza ani pokazać fałszywego potwierdzenia.
   const canBuildInteract = phase === 'PLANNING' && !serverBuildConfirmed;
   const canAbilityInteract = phase === 'PLANNING' && !serverAbilityConfirmed;
-
-  // Limit budynków na rundę: Budowlaniec może wybudować +1 (2), pozostali 1.
   const maxBuildings = me?.profession === 'builder' ? 2 : 1;
 
   const professionRequiresPlayerTarget = (() => {
@@ -94,35 +91,21 @@ export default function PlanningScreen() {
     ((professionRequiresPlayerTarget && !!selectedProfessionTargetId) ||
       (professionRequiresCategory && !!selectedTaxCategory));
 
-  // Timer dla fazy PLANNING
   useEffect(() => {
     if (phase !== 'PLANNING' || !planningPhaseStartTime) {
-      setTimeRemaining(600000); // Reset do 10 minut
+      setTimeRemaining(PLANNING_TOTAL_MS);
       return;
     }
 
     const updateTimer = () => {
       const elapsed = Date.now() - planningPhaseStartTime;
-      const remaining = Math.max(0, 600000 - elapsed); // 10 minut = 600000 ms
-      setTimeRemaining(remaining);
+      setTimeRemaining(Math.max(0, PLANNING_TOTAL_MS - elapsed));
     };
 
-    // Aktualizuj timer natychmiast
     updateTimer();
-
-    // Aktualizuj timer co sekundę
     const interval = setInterval(updateTimer, 1000);
-
     return () => clearInterval(interval);
   }, [phase, planningPhaseStartTime]);
-
-  // Formatuj czas w MM:SS
-  const formatTime = (ms: number): string => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
 
   const handleCardSelect = (cardId: string) => {
     if (!canBuildInteract) return;
@@ -141,10 +124,7 @@ export default function PlanningScreen() {
       }
       const card = me?.cards.find((c: CardDto) => c.id === cardId);
       if (card && getCardCost(card) > remainingGold) {
-        Alert.alert(
-          'Za mało złota',
-          'Nie masz wystarczająco złota, aby wybudować ten budynek.',
-        );
+        Alert.alert('Za mało złota', 'Nie masz wystarczająco złota, aby wybudować ten budynek.');
         return;
       }
       newSelected.add(cardId);
@@ -153,13 +133,11 @@ export default function PlanningScreen() {
   };
 
   const handleConfirmBuild = () => {
-    if (!gameId) return;
-    if (!canBuildInteract) return;
+    if (!gameId || !canBuildInteract || !playerId) return;
     if (selectedCards.size === 0) {
       Alert.alert('Błąd', 'Wybierz kartę do budowy');
       return;
     }
-    if (!playerId) return;
 
     const buildActions = Array.from(selectedCards)
       .map((cardId) => {
@@ -172,28 +150,20 @@ export default function PlanningScreen() {
           buildingValue: card.buildingValue,
         };
       })
-      .filter((a): a is { type: 'build'; cardId: string; buildingType: string; buildingValue: number } => a !== null);
+      .filter(
+        (a): a is { type: 'build'; cardId: string; buildingType: string; buildingValue: number } =>
+          a !== null,
+      );
 
     if (buildActions.length === 0) return;
 
-    confirmBuild({
-      gameId,
-      actions: buildActions,
-      passBuild: false,
-    });
+    confirmBuild({ gameId, actions: buildActions, passBuild: false });
     setLocalBuildSubmitted(true);
   };
 
   const handleSkipBuild = () => {
-    if (!gameId) return;
-    if (!canBuildInteract) return;
-    if (!playerId) return;
-
-    confirmBuild({
-      gameId,
-      actions: [],
-      passBuild: true,
-    });
+    if (!gameId || !canBuildInteract || !playerId) return;
+    confirmBuild({ gameId, actions: [], passBuild: true });
     setLocalBuildSubmitted(true);
     setSelectedCards(new Set());
   };
@@ -201,10 +171,7 @@ export default function PlanningScreen() {
   const SKIP_TARGET = '__skip__';
 
   const handleConfirmProfessionAbility = () => {
-    if (!gameId) return;
-    if (!playerId) return;
-    if (!canAbilityInteract) return;
-    if (!professionRequiresChoice) return;
+    if (!gameId || !playerId || !canAbilityInteract || !professionRequiresChoice) return;
     if (professionRequiresPlayerTarget && !selectedProfessionTargetId) return;
     if (professionRequiresCategory && !selectedTaxCategory) return;
 
@@ -217,9 +184,13 @@ export default function PlanningScreen() {
         : {
           type: 'use_profession',
           professionAbility: true,
-          target: professionRequiresPlayerTarget ? selectedProfessionTargetId ?? undefined : undefined,
+          target: professionRequiresPlayerTarget
+            ? selectedProfessionTargetId ?? undefined
+            : undefined,
           theftTarget: me?.profession === 'thief' ? thiefTheftTarget : undefined,
-          taxedCategory: professionRequiresCategory ? selectedTaxCategory ?? undefined : undefined,
+          taxedCategory: professionRequiresCategory
+            ? selectedTaxCategory ?? undefined
+            : undefined,
         },
     });
     setLocalAbilitySubmitted(true);
@@ -227,13 +198,10 @@ export default function PlanningScreen() {
 
   const sortedPlayers = [...players].sort(
     (a, b) =>
-      (a.joinOrder ?? Number.MAX_SAFE_INTEGER) -
-      (b.joinOrder ?? Number.MAX_SAFE_INTEGER),
+      (a.joinOrder ?? Number.MAX_SAFE_INTEGER) - (b.joinOrder ?? Number.MAX_SAFE_INTEGER),
   );
   const targetPlayers = playerId ? sortedPlayers.filter((p) => p.id !== playerId) : [];
 
-  // Koszt budowy karty = wartość budynku z uwzględnieniem zniżki własnego zawodu.
-  // Łowca okazji buduje o 2 taniej (minimum 0).
   const getCardCost = (card: CardDto): number => {
     let cost = card.buildingValue;
     if (me?.profession === 'opportunity_hunter') {
@@ -249,75 +217,84 @@ export default function PlanningScreen() {
   }, 0);
   const remainingGold = availableGold - selectedCost;
 
+  const isOffensiveProfession =
+    me?.profession === 'saboteur' ||
+    me?.profession === 'vandal' ||
+    me?.profession === 'thief' ||
+    me?.profession === 'spy';
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <View style={styles.screen}>
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>
-            Runda {round} - Planowanie
-          </Text>
+        <View style={styles.headerRow}>
+          <Text variant="display">Runda {round} — Planowanie</Text>
           {phase === 'PLANNING' && (
-            <View style={styles.timerContainer}>
-              <Text style={styles.timerLabel}>Pozostały czas:</Text>
-              <Text style={[styles.timerText, timeRemaining < 60000 && styles.timerTextWarning]}>
-                {formatTime(timeRemaining)}
-              </Text>
-            </View>
+            <RoundTimer remainingMs={timeRemaining} totalMs={PLANNING_TOTAL_MS} />
           )}
         </View>
       </View>
 
-      {/* Lista graczy */}
-      <ScrollView style={styles.playersList}>
-        <Text style={styles.sectionTitle}>Gracze</Text>
-        {sortedPlayers.map((player) => (
-          <PlayerCard
-            key={player.id}
-            player={player}
-            isMe={player.id === playerId}
-            style={styles.playerCard}
-            hasSubmitted={submittedPlayers.has(player.id)}
-            showProfession={false}
-          />
-        ))}
+      <ScrollView style={styles.playersList} contentContainerStyle={styles.playersListContent}>
+        <Text variant="section" style={styles.sectionHeading}>
+          Gracze
+        </Text>
+        {sortedPlayers.map((player) => {
+          const status = planningStatus[player.id];
+          return (
+            <View key={player.id} style={styles.playerCardWrap}>
+              <PlayerCard
+                player={player}
+                isMe={player.id === playerId}
+                buildConfirmed={!!status?.buildConfirmed}
+                abilityConfirmed={!!status?.abilityConfirmed}
+                showProfession={false}
+              />
+            </View>
+          );
+        })}
       </ScrollView>
 
-      {/* Dolny panel z kartami - rozsuwany */}
       <View style={[styles.handPanel, handExpanded && styles.handPanelExpanded]}>
-        <Pressable
-          onPress={() => setHandExpanded(!handExpanded)}
-          style={styles.handToggle}
-        >
-          <View style={styles.handToggleContent}>
-            <Text style={styles.handToggleText}>
+        <Pressable onPress={() => setHandExpanded(!handExpanded)} style={styles.handToggle}>
+          <View style={styles.handToggleRow}>
+            <Text variant="body" style={styles.handToggleTitle}>
               Moje karty ({me?.cards.length || 0})
             </Text>
-            <Text style={styles.handToggleIcon}>{handExpanded ? '▼' : '▲'}</Text>
+            <Text variant="label">{handExpanded ? '▼' : '▲'}</Text>
           </View>
         </Pressable>
 
         {handExpanded && (
-          <ScrollView style={styles.handContent}>
+          <ScrollView
+            style={styles.handScroll}
+            contentContainerStyle={styles.handScrollContent}
+            showsVerticalScrollIndicator
+          >
             {me && (
               <View style={styles.resourceBar}>
                 <View style={styles.resourceItem}>
-                  <Text style={styles.headerLabel}>Złoto:</Text>
-                  <Text style={styles.goldText}>{availableGold}</Text>
+                  <Text variant="label">Złoto:</Text>
+                  <Text variant="stat" style={{ color: colors.gold.DEFAULT, marginLeft: 8 }}>
+                    {availableGold}
+                  </Text>
                 </View>
                 {professionData && (
                   <View style={styles.resourceItem}>
-                    <Text style={styles.headerLabel}>Zawód:</Text>
-                    <Text style={styles.professionText}>{professionData.name}</Text>
+                    <Text variant="label">Zawód:</Text>
+                    <Text variant="body" style={{ marginLeft: 8, fontFamily: 'PlusJakartaSans_700Bold' }}>
+                      {professionData.name}
+                    </Text>
                   </View>
                 )}
               </View>
             )}
 
             <View style={styles.columns}>
-              {/* Lewa kolumna: budynki */}
-              <View style={styles.leftColumn}>
-                <View style={styles.cardsContainer}>
+              <View style={styles.buildColumn}>
+                <Text variant="section" style={styles.columnHeading}>
+                  Budowa
+                </Text>
+                <View style={styles.cardsRow}>
                   {me?.cards.map((card: CardDto) => {
                     const isSelected = selectedCards.has(card.id);
                     const atLimit = !isSelected && selectedCards.size >= maxBuildings;
@@ -325,17 +302,20 @@ export default function PlanningScreen() {
                     const cannotAfford = !isSelected && cost > remainingGold;
                     const cardDisabled = !canBuildInteract || atLimit || cannotAfford;
                     return (
-                      <View key={card.id} style={styles.cardWithCost}>
+                      <View key={card.id} style={styles.cardWrap}>
                         <HandCard
                           card={card}
                           selected={isSelected}
                           disabled={cardDisabled}
+                          size="hand"
                           onPress={() => handleCardSelect(card.id)}
                         />
                         <Text
+                          variant="label"
                           style={[
-                            styles.cardCostText,
-                            cannotAfford && styles.cardCostTextUnaffordable,
+                            styles.cardCost,
+                            cannotAfford && { color: colors.danger },
+                            isSelected && { color: colors.text.primary },
                           ]}
                         >
                           Koszt: {cost} złota
@@ -346,105 +326,116 @@ export default function PlanningScreen() {
                 </View>
 
                 {selectedCards.size > 0 && (
-                  <Text style={styles.buildCostInfo}>
+                  <Text variant="label" style={styles.buildCostInfo}>
                     Budowa zużyje {selectedCost}{' '}
-                    {selectedCost === 1 ? 'złoto' : 'złota'} z {availableGold} dostępnego
-                    {' '}(pozostanie {remainingGold}).
+                    {selectedCost === 1 ? 'złoto' : 'złota'} z {availableGold} dostępnego (pozostanie{' '}
+                    {remainingGold}).
                   </Text>
                 )}
 
-                <View style={styles.actionButtons}>
+                <Row gap={12} style={styles.actionsRow}>
                   <Button
                     variant="primary"
                     onPress={handleConfirmBuild}
                     disabled={!canBuildInteract || selectedCards.size === 0 || localBuildSubmitted}
-                    style={styles.buildButton}
+                    style={styles.actionButton}
                   >
                     Buduj ({selectedCards.size}/{maxBuildings})
                   </Button>
-
                   <Button
                     variant="secondary"
                     onPress={handleSkipBuild}
                     disabled={!canBuildInteract || localBuildSubmitted}
-                    style={styles.skipButton}
+                    style={styles.actionButton}
                   >
                     Pomiń budowę
                   </Button>
-                </View>
+                </Row>
 
                 {serverBuildConfirmed && (
-                  <Text style={styles.stepConfirmedText}>✓ Budowa potwierdzona</Text>
+                  <Text variant="label" style={{ color: colors.success }}>
+                    ✓ Budowa potwierdzona
+                  </Text>
                 )}
               </View>
 
-              {/* Prawa kolumna: zdolność specjalna */}
-              <View style={styles.rightColumn}>
-                {professionData && (
-                  <Card style={styles.professionCard}>
-                    <Text style={styles.professionTitle}>
-                      Zawód: {professionData.name}
-                    </Text>
-                    <Text style={styles.professionDescription}>
-                      {getProfessionDescription(me?.profession || '')}
+              <View style={styles.professionColumn}>
+                {professionData && me?.profession && (
+                  <ProfessionPanel profession={me.profession}>
+                    <Text variant="body" style={styles.professionDescription}>
+                      {getProfessionDescription(me.profession)}
                     </Text>
 
                     {professionRequiresChoice ? (
                       <>
                         {professionRequiresPlayerTarget && (
                           <>
-                            <Text style={styles.targetLabel}>Wybierz gracza (cel)</Text>
-                            <View style={styles.targetList}>
-                              {targetPlayers.map((p) => {
-                                const selected = selectedProfessionTargetId === p.id;
-                                return (
-                                  <Pressable
-                                    key={p.id}
-                                    disabled={!canAbilityInteract}
-                                    onPress={
-                                      canAbilityInteract
-                                        ? () => setSelectedProfessionTargetId(p.id)
-                                        : undefined
-                                    }
-                                    style={[
-                                      styles.targetButton,
-                                      selected && styles.targetButtonSelected,
-                                    ]}
-                                  >
-                                    <Text style={styles.targetButtonText}>{p.name}</Text>
-                                  </Pressable>
-                                );
-                              })}
-                              <Pressable
-                                disabled={!canAbilityInteract}
-                                onPress={
-                                  canAbilityInteract
-                                    ? () => setSelectedProfessionTargetId(SKIP_TARGET)
-                                    : undefined
-                                }
-                                style={[
-                                  styles.targetButton,
-                                  styles.skipAbilityButton,
-                                  selectedProfessionTargetId === SKIP_TARGET && styles.targetButtonSelected,
-                                ]}
-                              >
-                                <Text style={styles.targetButtonText}>Pomiń</Text>
-                              </Pressable>
-                            </View>
+                            <Text variant="label" style={styles.fieldLabel}>
+                              Wybierz gracza (cel)
+                            </Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                              <View style={styles.targetRow}>
+                                {targetPlayers.map((p) => {
+                                  const selected = selectedProfessionTargetId === p.id;
+                                  return (
+                                    <Pressable
+                                      key={p.id}
+                                      disabled={!canAbilityInteract}
+                                      onPress={
+                                        canAbilityInteract
+                                          ? () => setSelectedProfessionTargetId(p.id)
+                                          : undefined
+                                      }
+                                      style={[
+                                        styles.targetChip,
+                                        selected
+                                          ? isOffensiveProfession
+                                            ? styles.targetChipDanger
+                                            : styles.targetChipBrand
+                                          : styles.targetChipDefault,
+                                        !canAbilityInteract && styles.targetChipDisabled,
+                                      ]}
+                                    >
+                                      <PlayerAvatar playerId={p.id} name={p.name} size={32} />
+                                      <Text variant="label" style={styles.targetChipLabel}>
+                                        {p.name}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                                <Pressable
+                                  disabled={!canAbilityInteract}
+                                  onPress={
+                                    canAbilityInteract
+                                      ? () => setSelectedProfessionTargetId(SKIP_TARGET)
+                                      : undefined
+                                  }
+                                  style={[
+                                    styles.targetChip,
+                                    styles.targetChipSkip,
+                                    selectedProfessionTargetId === SKIP_TARGET && styles.targetChipBrand,
+                                  ]}
+                                >
+                                  <Text variant="label">Pomiń</Text>
+                                </Pressable>
+                              </View>
+                            </ScrollView>
                           </>
                         )}
 
                         {professionRequiresCategory && (
                           <>
-                            <Text style={styles.targetLabel}>Wybierz kategorię do opodatkowania</Text>
-                            <View style={styles.categoryList}>
+                            <Text variant="label" style={styles.fieldLabel}>
+                              Wybierz kategorię do opodatkowania
+                            </Text>
+                            <View style={styles.categoryRow}>
                               {TAX_CATEGORIES.map((cat) => {
                                 const selected = selectedTaxCategory === cat.id;
                                 const hasSelection = selectedTaxCategory !== null;
                                 const dimmed = hasSelection && !selected;
                                 const categoryColor =
                                   CATEGORY_COLORS[cat.id as keyof typeof CATEGORY_COLORS] ||
-                                  '#6B7280';
+                                  '#57628A';
                                 return (
                                   <Pressable
                                     key={cat.id}
@@ -455,16 +446,18 @@ export default function PlanningScreen() {
                                         : undefined
                                     }
                                     style={[
-                                      styles.categoryButton,
+                                      styles.categoryChip,
                                       {
                                         backgroundColor: categoryColor,
                                         opacity: !canAbilityInteract ? 0.4 : dimmed ? 0.45 : 1,
                                         borderWidth: selected ? 3 : 0,
-                                        borderColor: selected ? '#60A5FA' : 'transparent',
+                                        borderColor: selected ? colors.brand.DEFAULT : 'transparent',
                                       },
                                     ]}
                                   >
-                                    <Text style={styles.targetButtonText}>{cat.label}</Text>
+                                    <Text variant="body" style={{ color: '#FFFFFF' }}>
+                                      {cat.label}
+                                    </Text>
                                   </Pressable>
                                 );
                               })}
@@ -472,10 +465,12 @@ export default function PlanningScreen() {
                           </>
                         )}
 
-                        {me?.profession === 'thief' && (
-                          <View style={styles.targetSelector}>
-                            <Text style={styles.targetLabel}>Co ukraść?</Text>
-                            <View style={styles.targetList}>
+                        {me.profession === 'thief' && (
+                          <View style={styles.thiefRow}>
+                            <Text variant="label" style={styles.fieldLabel}>
+                              Co ukraść?
+                            </Text>
+                            <View style={styles.choiceRow}>
                               {(['gold', 'card'] as const).map((t) => {
                                 const selected = thiefTheftTarget === t;
                                 return (
@@ -486,11 +481,11 @@ export default function PlanningScreen() {
                                       canAbilityInteract ? () => setThiefTheftTarget(t) : undefined
                                     }
                                     style={[
-                                      styles.targetButton,
-                                      selected && styles.targetButtonSelected,
+                                      styles.choiceChip,
+                                      selected ? styles.choiceChipSelected : styles.choiceChipDefault,
                                     ]}
                                   >
-                                    <Text style={styles.targetButtonText}>
+                                    <Text variant="body">
                                       {t === 'gold' ? 'Złoto' : 'Kartę'}
                                     </Text>
                                   </Pressable>
@@ -500,25 +495,25 @@ export default function PlanningScreen() {
                           </View>
                         )}
 
-                        <View style={styles.professionAbilityButtonRow}>
-                          <Button
-                            variant="primary"
-                            onPress={handleConfirmProfessionAbility}
-                            disabled={!canConfirmProfessionAbility || localAbilitySubmitted}
-                            style={styles.professionAbilityButton}
-                          >
-                            Zatwierdź operację zdolności
-                          </Button>
-                        </View>
+                        <Button
+                          variant="primary"
+                          onPress={handleConfirmProfessionAbility}
+                          disabled={!canConfirmProfessionAbility || localAbilitySubmitted}
+                          style={styles.fullWidthButton}
+                        >
+                          Zatwierdź operację zdolności
+                        </Button>
                       </>
                     ) : (
-                      <Text style={styles.autoStepText}>Zdolność: auto</Text>
+                      <Text variant="label">Zdolność: auto</Text>
                     )}
 
                     {professionRequiresChoice && serverAbilityConfirmed && (
-                      <Text style={styles.stepConfirmedText}>✓ Zdolność potwierdzona</Text>
+                      <Text variant="label" style={{ color: colors.success, marginTop: 8 }}>
+                        ✓ Zdolność potwierdzona
+                      </Text>
                     )}
-                  </Card>
+                  </ProfessionPanel>
                 )}
               </View>
             </View>
@@ -537,284 +532,217 @@ function getProfessionDescription(profession: string): string {
     accountant: 'Księgowy – jeśli na koniec rundy masz mniej niż 2 złotki, otrzymujesz +2 złotki',
     builder: 'Budowlaniec – może wybudować +1 budynek',
     architect: 'Architekt – może zmienić kategorię budynku',
-    urbanist: 'Urbanista – budynek o najniższej wartości +1 (lub pierwszy wybudowany w rundzie, jeśli nie masz budynków)',
+    urbanist:
+      'Urbanista – budynek o najniższej wartości +1 (lub pierwszy wybudowany w rundzie, jeśli nie masz budynków)',
     vandal: 'Wandal – niszczy wartość budynku przeciwnika o 2',
     thief: 'Złodziej – kradnie 2 złotki lub losową kartę budynku z ręki przeciwnika',
     saboteur: 'Sabotażysta – blokuje zdolność przeciwnika',
     spy: 'Szpieg – podgląda rękę innego gracza',
-    politician: 'Polityk – nakłada podatek na wybraną kategorię: zyskuje +1 złotko za każdy budynek wybudowany w niej przez innych graczy w tej rundzie',
-    diplomat: 'Dyplomata – nie może być celem negatywnych działań w tej rundzie (sam nie atakuje)',
-    inspector: 'Inspektor – wskazuje gracza, którego budynki zostaną wybudowane dopiero w kolejnej rundzie',
+    politician:
+      'Polityk – nakłada podatek na wybraną kategorię: zyskuje +1 złotko za każdy budynek wybudowany w niej przez innych graczy w tej rundzie',
+    diplomat:
+      'Dyplomata – nie może być celem negatywnych działań w tej rundzie (sam nie atakuje)',
+    inspector:
+      'Inspektor – wskazuje gracza, którego budynki zostaną wybudowane dopiero w kolejnej rundzie',
   };
   return descriptions[profession] || 'Brak opisu';
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: '#111827',
+    backgroundColor: colors.bg.base,
   },
   header: {
-    backgroundColor: '#1F2937',
-    padding: 16,
+    zIndex: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#374151',
+    borderBottomColor: colors.border.DEFAULT,
+    backgroundColor: colors.bg.elevated,
+    paddingHorizontal: spacing.screen,
+    paddingVertical: 12,
   },
-  headerTop: {
+  headerRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
   },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
+  playersList: {
+    flex: 1,
   },
-  timerContainer: {
+  playersListContent: {
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.screen,
+    paddingBottom: spacing.cardGap,
+  },
+  sectionHeading: {
+    marginBottom: 12,
+  },
+  playerCardWrap: {
+    marginBottom: spacing.cardGap,
+  },
+  handPanel: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border.DEFAULT,
+    backgroundColor: colors.bg.elevated,
+    height: 128,
+  },
+  handPanelExpanded: {
+    height: 700,
+  },
+  handToggle: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.DEFAULT,
+    padding: 12,
+  },
+  handToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#374151',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    justifyContent: 'space-between',
   },
-  timerLabel: {
-    color: '#9CA3AF',
-    fontSize: 12,
-    marginRight: 6,
+  handToggleTitle: {
+    fontFamily: 'PlusJakartaSans_700Bold',
   },
-  timerText: {
-    color: '#10B981',
-    fontSize: 16,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
+  handScroll: {
+    flex: 1,
+    minHeight: 0,
   },
-  timerTextWarning: {
-    color: '#EF4444',
+  handScrollContent: {
+    padding: spacing.screen,
   },
   resourceBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#111827',
-    borderRadius: 8,
+    flexWrap: 'wrap',
+    borderRadius: radius.chip,
+    backgroundColor: colors.bg.base,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginBottom: 16,
-    gap: 24,
+    marginBottom: spacing.cardGap,
   },
   resourceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  headerLabel: {
-    color: '#9CA3AF',
-    marginRight: 8,
-  },
-  cardWithCost: {
-    alignItems: 'center',
-  },
-  cardCostText: {
-    color: '#D1D5DB',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  cardCostTextUnaffordable: {
-    color: '#EF4444',
-  },
-  buildCostInfo: {
-    color: '#FBBF24',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  goldText: {
-    color: '#FBBF24',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginRight: 16,
-  },
-  professionText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  playersList: {
-    flex: 1,
-    padding: 16,
-  },
-  sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  playerCard: {
-    marginBottom: 12,
-  },
-  handPanel: {
-    backgroundColor: '#1F2937',
-    borderTopWidth: 1,
-    borderTopColor: '#374151',
-    height: 128,
-  },
-  handPanelExpanded: {
-    height: '66%',
-  },
-  handToggle: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#374151',
-  },
-  handToggleDisabled: {
-    opacity: 0.6,
-  },
-  handToggleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  handToggleText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  handToggleIcon: {
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  handContent: {
-    flex: 1,
-    padding: 16,
-  },
-  cardsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
+    marginRight: 24,
+    marginBottom: 4,
   },
   columns: {
     flexDirection: 'row',
-    gap: 12,
-    flex: 1,
+    alignItems: 'flex-start',
+    marginTop: spacing.cardGap,
   },
-  leftColumn: {
+  buildColumn: {
     flex: 2,
+    minWidth: 0,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    backgroundColor: 'rgba(11, 18, 32, 0.5)',
+    padding: 12,
+    marginRight: 6,
   },
-  rightColumn: {
+  professionColumn: {
     flex: 1,
+    minWidth: 240,
+    marginLeft: 6,
   },
-  professionCard: {
-    marginBottom: 16,
-  },
-  professionTitle: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  professionDescription: {
-    color: '#9CA3AF',
-    fontSize: 14,
+  columnHeading: {
     marginBottom: 12,
   },
-  targetSelector: {
-    marginBottom: 12,
-  },
-  targetLabel: {
-    color: '#9CA3AF',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  targetList: {
-    flexDirection: 'row',
-  },
-  categoryList: {
+  cardsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'flex-start',
+    marginBottom: spacing.cardGap,
   },
-  categoryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginRight: 0,
-    marginBottom: 0,
+  cardWrap: {
+    alignItems: 'center',
+    marginRight: 12,
+    marginBottom: 12,
   },
-  targetButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#374151',
+  cardCost: {
+    marginTop: 4,
+    fontSize: 12,
+  },
+  buildCostInfo: {
+    marginBottom: 12,
+    color: colors.gold.DEFAULT,
+  },
+  actionsRow: {
+    marginBottom: spacing.cardGap,
+    alignSelf: 'stretch',
+  },
+  actionButton: {
+    flex: 1,
+  },
+  professionDescription: {
+    marginBottom: 12,
+    color: colors.text.secondary,
+  },
+  fieldLabel: {
+    marginBottom: 8,
+  },
+  targetRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    paddingBottom: 4,
+  },
+  targetChip: {
+    alignItems: 'center',
+    borderRadius: radius.chip,
+    borderWidth: 2,
+    padding: 8,
     marginRight: 8,
   },
-  targetButtonSelected: {
-    backgroundColor: '#2563EB',
+  targetChipDefault: {
+    borderColor: colors.border.DEFAULT,
   },
-  targetButtonDisabled: {
+  targetChipBrand: {
+    borderColor: colors.brand.DEFAULT,
+  },
+  targetChipDanger: {
+    borderColor: colors.danger,
+  },
+  targetChipSkip: {
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  targetChipDisabled: {
     opacity: 0.4,
   },
-  targetButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-  },
-  skipAbilityButton: {
-    backgroundColor: '#6B7280',
-    borderWidth: 1,
-    borderColor: '#9CA3AF',
-  },
-  professionButton: {
-    marginTop: 8,
-  },
-  actionsSection: {
-    marginBottom: 16,
-  },
-  actionsTitle: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  actionsCard: {
-    marginTop: 8,
-  },
-  actionItem: {
-    marginBottom: 8,
-  },
-  actionText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  buildButton: {
-    flex: 1,
-  },
-  skipButton: {
-    flex: 1,
-  },
-  stepConfirmedText: {
-    color: '#10B981',
+  targetChipLabel: {
+    marginTop: 4,
     fontSize: 12,
-    fontWeight: '600',
-    marginTop: 8,
   },
-  autoStepText: {
-    color: '#9CA3AF',
-    fontSize: 14,
-    marginTop: 8,
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 12,
   },
-  professionAbilityButtonRow: {
-    marginTop: 12,
+  categoryChip: {
+    borderRadius: radius.chip,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    marginBottom: 8,
   },
-  professionAbilityButton: {
-    width: '100%',
+  thiefRow: {
+    marginBottom: 12,
   },
-  submitButton: {
+  choiceRow: {
+    flexDirection: 'row',
+  },
+  choiceChip: {
+    borderRadius: radius.chip,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  choiceChipSelected: {
+    backgroundColor: colors.brand.DEFAULT,
+  },
+  choiceChipDefault: {
+    backgroundColor: colors.bg.hover,
+  },
+  fullWidthButton: {
     width: '100%',
   },
 });

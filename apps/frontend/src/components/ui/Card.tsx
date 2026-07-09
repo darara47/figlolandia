@@ -1,27 +1,35 @@
-import { View, ViewProps, StyleSheet } from 'react-native';
+import { View, ViewProps } from 'react-native';
+import { cn } from '@/src/utils/cn';
+import { colors, radius, shadows } from '@/src/theme/tokens';
 
 interface CardProps extends ViewProps {
   className?: string;
   children: React.ReactNode;
+  highlighted?: boolean;
 }
 
-export const Card = ({ style, children, ...props }: CardProps) => {
-  return (
-    <View
-      style={[styles.card, style]}
-      {...props}
-    >
-      {children}
-    </View>
-  );
-};
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-});
+export const Card = ({
+  className,
+  children,
+  highlighted = false,
+  style,
+  ...props
+}: CardProps) => (
+  <View
+    className={cn(className)}
+    style={[
+      {
+        backgroundColor: colors.bg.elevated,
+        borderRadius: radius.card,
+        padding: 16,
+        borderWidth: highlighted ? 2 : 1,
+        borderColor: highlighted ? colors.brand.DEFAULT : colors.border.DEFAULT,
+        ...shadows.card,
+      },
+      style,
+    ]}
+    {...props}
+  >
+    {children}
+  </View>
+);

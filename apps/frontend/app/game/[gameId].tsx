@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { useGameStore } from '@/src/store/game.store';
 import { useSocketStore } from '@/src/store/socket.store';
 import { useLobbyStore } from '@/src/store/lobby.store';
-import { Narrator } from '@/src/components/narrator/Narrator';
+import { NarratorPanel } from '@/src/components/design-system/NarratorPanel';
 import PlanningScreen from './planning';
 import ResolutionScreen from './resolution';
 import SummaryScreen from './summary';
@@ -15,7 +15,6 @@ export default function GameScreen() {
   const { playerId } = useLobbyStore();
   const { setEventHandlers } = useSocketStore();
 
-  // Ustaw event handlery
   useEffect(() => {
     setEventHandlers({
       onGameStateUpdate: (payload) => {
@@ -23,18 +22,11 @@ export default function GameScreen() {
           updateFromServer(payload, playerId);
         }
       },
-      onPhaseChange: (payload) => {
-        if (payload.gameId === gameId && playerId) {
-          // Stan zostanie zaktualizowany przez GAME_STATE_UPDATE
-        }
-      },
+      onPhaseChange: () => { },
     });
-    return () => {
-      setEventHandlers({});
-    };
-  }, [gameId, playerId, setEventHandlers]);
+    return () => setEventHandlers({});
+  }, [gameId, playerId, setEventHandlers, updateFromServer]);
 
-  // Renderuj odpowiedni ekran w zależności od fazy
   const renderScreen = () => {
     switch (phase) {
       case 'PLANNING':
@@ -49,17 +41,9 @@ export default function GameScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Narrator events={narrativeLog} />
+    <View className="flex-1 bg-bg-base">
+      <NarratorPanel events={narrativeLog} />
       {renderScreen()}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111827',
-  },
-});
-

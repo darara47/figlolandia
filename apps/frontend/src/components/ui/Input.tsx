@@ -1,28 +1,29 @@
-import { TextInput, TextInputProps, StyleSheet } from 'react-native';
+import { TextInput, TextInputProps } from 'react-native';
+import { cn } from '@/src/utils/cn';
+import { colors, fonts, radius } from '@/src/theme/tokens';
 
 interface InputProps extends TextInputProps {
   className?: string;
 }
 
-export const Input = ({ style, ...props }: InputProps) => {
-  return (
-    <TextInput
-      style={[styles.input, style]}
-      placeholderTextColor="#9CA3AF"
-      {...props}
-    />
-  );
-};
-
-const styles = StyleSheet.create({
-  input: {
-    backgroundColor: '#1F2937',
-    borderWidth: 1,
-    borderColor: '#374151',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    color: '#FFFFFF',
-    fontSize: 16,
-  },
-});
+export const Input = ({ className, style, ...props }: InputProps) => (
+  <TextInput
+    className={cn(className)}
+    placeholderTextColor={colors.text.tertiary}
+    style={[
+      {
+        backgroundColor: colors.bg.elevated,
+        borderWidth: 1,
+        borderColor: colors.border.DEFAULT,
+        borderRadius: radius.chip,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        color: colors.text.primary,
+        fontFamily: fonts.body,
+        fontSize: 16,
+      },
+      style,
+    ]}
+    {...props}
+  />
+);

@@ -1,4 +1,9 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { Baloo2_700Bold } from '@expo-google-fonts/baloo-2';
+import {
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_700Bold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -6,33 +11,43 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 import '../global.css';
+import '@/src/nativewind-setup';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import { colors } from '@/src/theme/tokens';
 
 export {
-  // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: 'index',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+const figlolandiaTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: colors.bg.base,
+    card: colors.bg.elevated,
+    border: colors.border.DEFAULT,
+    primary: colors.brand.DEFAULT,
+    text: colors.text.primary,
+  },
+};
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    Baloo2_700Bold,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_700Bold,
     ...FontAwesome.font,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
     if (error) {
       console.error('Font loading error:', error);
-      // Don't throw, just log - allow app to continue
     }
   }, [error]);
 
@@ -51,7 +66,7 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   return (
-    <ThemeProvider value={DarkTheme}>
+    <ThemeProvider value={figlolandiaTheme}>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="lobby" options={{ headerShown: false }} />

@@ -545,11 +545,11 @@ function getAssignableProfessions() {
  * Używane do stylizacji kart w UI
  */
 exports.CATEGORY_COLORS = {
-    education: '#3B82F6', // Blue
-    health: '#EF4444', // Red
-    finance: '#F59E0B', // Amber/Gold
-    administration: '#8B5CF6', // Purple
-    entertainment: '#10B981', // Green
+    education: '#4C8DFF',
+    health: '#FF5C72',
+    finance: '#F0B429',
+    administration: '#A66BFF',
+    entertainment: '#2DD4BF',
 };
 /**
  * Pobiera kolor kategorii budynku
