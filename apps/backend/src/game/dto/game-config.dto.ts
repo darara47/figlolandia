@@ -53,6 +53,18 @@ export class GameConfigDto {
   eventFrequency?: number;
 
   @ApiProperty({
+    description: 'Bonus złota dla gracza rozstrzygniętego jako ostatni w rundzie',
+    example: 0,
+    minimum: 0,
+    required: false,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  lastMoveGoldBonus?: number;
+
+  @ApiProperty({
     description: 'Minimalna liczba graczy',
     example: 3,
     minimum: 3,

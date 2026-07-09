@@ -1,0 +1,3 @@
+run ubuntu
+wsl -d Ubuntu
+

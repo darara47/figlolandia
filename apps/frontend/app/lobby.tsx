@@ -95,6 +95,7 @@ export default function LobbyScreen() {
             maxRounds: payload.config.maxRounds,
             victoryThreshold: payload.config.victoryThreshold,
             eventFrequency: payload.config.eventFrequency,
+            lastMoveGoldBonus: payload.config.lastMoveGoldBonus ?? 0,
             minPlayers: 3,
             maxPlayers: 8,
             animationSpeed: payload.config.animationSpeed ?? 'full',
@@ -149,6 +150,7 @@ export default function LobbyScreen() {
                 maxRounds: response.state.config.maxRounds,
                 victoryThreshold: response.state.config.victoryThreshold,
                 eventFrequency: response.state.config.eventFrequency,
+                lastMoveGoldBonus: response.state.config.lastMoveGoldBonus ?? 0,
                 animationSpeed: response.state.config.animationSpeed ?? 'full',
               },
             };
@@ -236,6 +238,7 @@ export default function LobbyScreen() {
               { label: 'Maksymalna liczba rund', key: 'maxRounds' as const, value: config.maxRounds?.toString() || '10' },
               { label: 'Próg zwycięstwa', key: 'victoryThreshold' as const, value: config.victoryThreshold?.toString() || '50' },
               { label: 'Częstotliwość zdarzeń (0-100%)', key: 'eventFrequency' as const, value: config.eventFrequency !== undefined ? String(config.eventFrequency) : '0' },
+              { label: 'Bonus złota za ostatni ruch w rundzie', key: 'lastMoveGoldBonus' as const, value: config.lastMoveGoldBonus !== undefined ? String(config.lastMoveGoldBonus) : '0' },
               { label: 'Minimalna liczba graczy', key: 'minPlayers' as const, value: config.minPlayers?.toString() || '3' },
               { label: 'Maksymalna liczba graczy', key: 'maxPlayers' as const, value: config.maxPlayers?.toString() || '8' },
             ].map((field) => (
@@ -254,6 +257,16 @@ export default function LobbyScreen() {
                       }
                       const parsed = Math.min(100, parseInt(digitsOnly, 10));
                       updateConfig({ eventFrequency: Number.isFinite(parsed) ? parsed : 0 });
+                      return;
+                    }
+                    if (field.key === 'lastMoveGoldBonus') {
+                      const digitsOnly = text.replace(/\D/g, '');
+                      if (digitsOnly === '') {
+                        updateConfig({ lastMoveGoldBonus: 0 });
+                        return;
+                      }
+                      const parsed = parseInt(digitsOnly, 10);
+                      updateConfig({ lastMoveGoldBonus: Number.isFinite(parsed) ? parsed : 0 });
                       return;
                     }
                     updateConfig({ [field.key]: parseInt(text) || (field.key === 'minPlayers' ? 3 : field.key === 'maxPlayers' ? 8 : field.key === 'maxRounds' ? 10 : 50) });

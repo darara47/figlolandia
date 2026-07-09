@@ -35,6 +35,7 @@ interface GameStore {
     maxRounds: number;
     victoryThreshold: number;
     eventFrequency: number;
+    lastMoveGoldBonus: number;
     animationSpeed: 'full' | 'fast' | 'off';
   };
 
@@ -74,6 +75,7 @@ export const useGameStore = create<GameStore>((set) => ({
     maxRounds: 10,
     victoryThreshold: 50,
     eventFrequency: 0,
+    lastMoveGoldBonus: 0,
     animationSpeed: 'full',
   },
 
@@ -110,6 +112,7 @@ export const useGameStore = create<GameStore>((set) => ({
         maxRounds: payload.config.maxRounds,
         victoryThreshold: payload.config.victoryThreshold,
         eventFrequency: payload.config.eventFrequency,
+        lastMoveGoldBonus: payload.config.lastMoveGoldBonus ?? 0,
         animationSpeed: payload.config.animationSpeed ?? 'full',
       },
     }));
@@ -169,6 +172,7 @@ export const useGameStore = create<GameStore>((set) => ({
         maxRounds: 10,
         victoryThreshold: 50,
         eventFrequency: 0,
+        lastMoveGoldBonus: 0,
         animationSpeed: 'full',
       },
     });

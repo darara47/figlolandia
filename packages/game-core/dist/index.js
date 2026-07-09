@@ -112,19 +112,20 @@ class RoundEngine {
             p.delayedBuildings = false;
             p.urbanistPendingBuildBoost = false;
             p.buildingsBuiltThisRound = 0;
+            p.luckyGoldGranted = undefined;
         });
         // Uwaga: Zdarzenia losowe są teraz rozstrzygane w fazie PREP, przed PLANNING
         // 2. Zdolności zawodowe (Polityk → Dyplomata → Sabotażysta → reszta)
         this.applyProfessionAbilities(sortedPlayers, actions, newState);
         resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_abilities', sortedPlayers);
-        // 3. Kradzieże
-        this.resolveTheft(sortedPlayers, actions, newState);
-        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_theft', sortedPlayers);
-        // 4. Niszczenie budynków
+        // 3. Niszczenie budynków
         this.resolveDestruction(sortedPlayers, actions, newState);
-        // 5. Budowy (najniższy priorytet)
+        // 4. Budowy
         this.resolveBuildings(sortedPlayers, actions, newState);
         resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_builds', sortedPlayers);
+        // 5. Kradzieże (Złodziej — po budowach, żeby cel najpierw wydał złoto na budowę)
+        this.resolveTheft(sortedPlayers, actions, newState);
+        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_theft', sortedPlayers);
         // 6. Zastosuj efekty końcowe zawodów (np. Księgowy)
         this.applyEndOfRoundAbilities(sortedPlayers, newState);
         resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_end_abilities', sortedPlayers);
@@ -222,6 +223,7 @@ class RoundEngine {
                 case 'lucky': {
                     const goldBefore = player.gold;
                     player.gold += 2;
+                    player.luckyGoldGranted = 2;
                     resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'abilities.lucky', player, goldBefore, player.gold);
                     break;
                 }

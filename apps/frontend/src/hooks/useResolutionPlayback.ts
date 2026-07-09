@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerDto } from '@/src/types/api';
 import { NarrativeEvent } from '@/types/websocket';
-import { BUILDING_DATA, getResolutionTurnDurationMs, RESOLUTION_BUILD_AT, RESOLUTION_PROFESSION_AT, RESOLUTION_TURN_GAP_MS } from '@figlolandia/game-core';
+import {
+  BUILDING_DATA,
+  getResolutionTurnDurationMs,
+  RESOLUTION_BUILD_AT,
+  RESOLUTION_PROFESSION_AT,
+  RESOLUTION_TURN_GAP_MS,
+} from '@figlolandia/game-core';
 import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
 import { getGoldDeltaForEvent } from '@/src/utils/goldDelta';
 
@@ -23,6 +29,16 @@ export interface PlayerTurn {
 
 const BUILD_AT = RESOLUTION_BUILD_AT;
 const PROFESSION_AT = RESOLUTION_PROFESSION_AT;
+const PRE_PROFESSION_AT = 0.12;
+
+const PRE_BUILD_PROFESSION_TYPES = new Set([
+  'lucky',
+  'urbanist',
+  'diplomat',
+  'inspector',
+  'spy',
+  'politician_tax_category',
+]);
 
 const isBuildEvent = (event: NarrativeEvent) => event.type === 'build';
 
@@ -30,9 +46,13 @@ const turnDurationMs = (speed: AnimationSpeed, fastMultiplier: number): number =
   getResolutionTurnDurationMs(speed, fastMultiplier);
 
 const segmentTurnEvents = (events: NarrativeEvent[]) => {
+  const preProfession = events.filter((e) => PRE_BUILD_PROFESSION_TYPES.has(e.type));
   const pureBuilds = events.filter(isBuildEvent);
-  const otherEvents = events.filter((e) => !isBuildEvent(e));
+  const otherEvents = events.filter(
+    (e) => !PRE_BUILD_PROFESSION_TYPES.has(e.type) && !isBuildEvent(e),
+  );
   return {
+    preProfession,
     initialBuilds: pureBuilds.slice(0, 1),
     professionBuilds: pureBuilds.slice(1),
     otherEvents,
@@ -254,10 +274,21 @@ export const useResolutionPlayback = ({
 
     const turn = playerTurns[turnIndex];
     const duration = turnDurationMs(animationSpeed, speedMultiplier);
-    const { initialBuilds, professionBuilds, otherEvents } = segmentTurnEvents(turn.events);
+    const { preProfession, initialBuilds, professionBuilds, otherEvents } = segmentTurnEvents(
+      turn.events,
+    );
 
     setActivePlayerId(turn.playerId);
-    setCurrentEvent(initialBuilds[0] ?? otherEvents[0] ?? turn.events[0] ?? null);
+    setCurrentEvent(
+      preProfession[0] ?? initialBuilds[0] ?? otherEvents[0] ?? turn.events[0] ?? null,
+    );
+
+    if (preProfession.length > 0) {
+      schedule(() => {
+        applyEventBatch(preProfession);
+        setCurrentEvent(preProfession[preProfession.length - 1]);
+      }, Math.round(duration * PRE_PROFESSION_AT));
+    }
 
     if (initialBuilds.length > 0) {
       schedule(() => {
@@ -281,7 +312,11 @@ export const useResolutionPlayback = ({
       if (otherEvents.length > 0) {
         applyEventBatch(otherEvents);
         triggerInteractionEffects(otherEvents);
-      } else if (initialBuilds.length === 0 && professionBuilds.length === 0) {
+      } else if (
+        preProfession.length === 0 &&
+        initialBuilds.length === 0 &&
+        professionBuilds.length === 0
+      ) {
         applyEventBatch(turn.events, { highlightBuilds: true });
         triggerInteractionEffects(turn.events);
       }

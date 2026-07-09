@@ -18,6 +18,8 @@ export interface Player {
     deferredBuildActions: PlayerAction[];
     urbanistPendingBuildBoost: boolean;
     buildingsBuiltThisRound: number;
+    /** Szczęściarz: ile złota przyznano w tej rundzie (do narracji / animacji). */
+    luckyGoldGranted?: number;
 }
 export interface Building {
     id: string;
@@ -37,6 +39,7 @@ export interface GameConfig {
     maxRounds: number;
     victoryThreshold: number;
     eventFrequency: number;
+    lastMoveGoldBonus: number;
     minPlayers: number;
     maxPlayers: number;
     animationSpeed: AnimationSpeed;

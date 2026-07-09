@@ -95,6 +95,7 @@ export interface GameStateUpdatePayload {
     maxRounds: number;
     victoryThreshold: number;
     eventFrequency: number;
+    lastMoveGoldBonus: number;
     animationSpeed: 'full' | 'fast' | 'off';
   };
   submittedPlayers?: string[]; // Lista ID graczy, którzy zatwierdzili swoje ruchy (tylko w fazie PLANNING)

@@ -18,8 +18,11 @@ import { sortPlayersByJoinOrder } from '@/src/utils/players';
 import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
 import { PlayerDto } from '@/src/types/api';
 
-const getRoundStartGoldDelta = (player: PlayerDto, lastOrder: number): number =>
-  2 + (player.order === lastOrder ? 1 : 0);
+const getRoundStartGoldDelta = (
+  player: PlayerDto,
+  lastOrder: number,
+  lastMoveGoldBonus: number,
+): number => 2 + (player.order === lastOrder ? lastMoveGoldBonus : 0);
 
 const shouldShowRoundStartGold = (round: number, player: PlayerDto): boolean => {
   if (round > 1) return true;
@@ -88,19 +91,20 @@ export default function PlanningScreen() {
       return;
     }
 
-    const { players: currentPlayers, round: currentRound } = useGameStore.getState();
+    const { players: currentPlayers, round: currentRound, config } = useGameStore.getState();
     if (currentPlayers.length === 0) {
       return;
     }
 
     prepFloatShownAt.current = planningPhaseStartTime;
     const lastOrder = Math.max(0, ...currentPlayers.map((p) => p.order));
+    const lastMoveGoldBonus = config.lastMoveGoldBonus ?? 0;
     const floats: Record<string, GoldFloatItem[]> = {};
     for (const player of currentPlayers) {
       if (!shouldShowRoundStartGold(currentRound, player)) {
         continue;
       }
-      const delta = getRoundStartGoldDelta(player, lastOrder);
+      const delta = getRoundStartGoldDelta(player, lastOrder, lastMoveGoldBonus);
       floats[player.id] = [
         {
           id: `${player.id}-prep-${planningPhaseStartTime}`,

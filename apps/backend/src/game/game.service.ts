@@ -120,6 +120,12 @@ export class GameService {
         );
       }
 
+      if (state.config.lastMoveGoldBonus < 0) {
+        throw new BadRequestException(
+          'Bonus złota za ostatni ruch nie może być ujemny'
+        );
+      }
+
       const validSpeeds = ['full', 'fast', 'off'] as const;
       if (!validSpeeds.includes(state.config.animationSpeed)) {
         throw new BadRequestException(
@@ -172,6 +178,7 @@ export class GameService {
       player.protected = false;
       player.delayedBuildings = false;
       player.buildingsBuiltThisRound = 0;
+      player.luckyGoldGranted = undefined;
     });
 
     // 1. Losuj zawody (bez powtórzenia z poprzedniej rundy i bez duplikatów w tej samej rundzie)
@@ -269,21 +276,24 @@ export class GameService {
       player.order = shuffledIds.indexOf(player.id);
     });
 
-    // 5. Gracz rozstrzygany jako ostatni otrzymuje +1 złotko
-    const lastPlayer = state.players.find(
-      (p) => p.order === state.players.length - 1
-    );
-    if (lastPlayer) {
-      const goldBefore = lastPlayer.gold;
-      lastPlayer.gold += 1;
-      ResolutionDebug.logGoldChange(
-        'PREP',
-        'last_in_order',
-        lastPlayer,
-        goldBefore,
-        lastPlayer.gold,
-        { order: lastPlayer.order },
+    // 5. Gracz rozstrzygany jako ostatni otrzymuje bonus złota (konfigurowalny w lobby)
+    const lastMoveGoldBonus = state.config.lastMoveGoldBonus ?? 0;
+    if (lastMoveGoldBonus > 0) {
+      const lastPlayer = state.players.find(
+        (p) => p.order === state.players.length - 1
       );
+      if (lastPlayer) {
+        const goldBefore = lastPlayer.gold;
+        lastPlayer.gold += lastMoveGoldBonus;
+        ResolutionDebug.logGoldChange(
+          'PREP',
+          'last_in_order',
+          lastPlayer,
+          goldBefore,
+          lastPlayer.gold,
+          { order: lastPlayer.order, bonus: lastMoveGoldBonus },
+        );
+      }
     }
 
     ResolutionDebug.log(
@@ -341,6 +351,7 @@ export class GameService {
 
     // Reset kroki PLANNING (separacja "Buduj" i "Zatwierdź zdolność").
     // Dla części zawodów zdolność nie wymaga wyboru celu -> auto-potwierdzenie.
+    const autoAbilityProfessions = new Set(['lucky', 'diplomat', 'urbanist']);
     const planningSteps = new Map<string, PlanningStep>();
     for (const player of state.players) {
       const profession = player.profession;
@@ -355,11 +366,16 @@ export class GameService {
       const abilityRequiresChoice =
         abilityRequiresPlayerTarget || profession === 'politician';
 
+      const autoAbilityAction =
+        profession && autoAbilityProfessions.has(profession)
+          ? [{ type: 'use_profession' as const, professionAbility: true }]
+          : [];
+
       planningSteps.set(player.id, {
         buildConfirmed: false,
         abilityConfirmed: !abilityRequiresChoice,
         buildActions: [],
-        abilityActions: [],
+        abilityActions: autoAbilityAction,
       });
     }
     this.planningStepsByGame.set(gameId, planningSteps);

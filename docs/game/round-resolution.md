@@ -7,9 +7,9 @@ Faza **RESOLUTION** stosuje akcje wszystkich graczy według stałej kolejności.
 ```mermaid
 flowchart TD
     A[Reset flag zawodów] --> B[Zdolności zawodowe]
-    B --> C[Kradzieże]
-    C --> D[Niszczenie budynków]
-    D --> E[Budowy]
+    B --> C[Niszczenie budynków]
+    C --> D[Budowy]
+    D --> E[Kradzieże]
     E --> F[Efekty końcowe rundy]
 ```
 
@@ -42,20 +42,11 @@ Kolejność rozstrzygania:
 
 Zdolności pasywne przy budowie (Łowca okazji, Budowlaniec) rozstrzygane są w kroku 5.
 
-### 3. Kradzieże (`resolveTheft`)
-
-**Złodziej** kradnie od celu:
-
-- **Złoto** — do 2 monet, lub
-- **Karta** — losowa karta z ręki celu
-
-Nie działa na chronionych.
-
-### 4. Niszczenie (`resolveDestruction`)
+### 3. Niszczenie (`resolveDestruction`)
 
 **Wandal** wskazuje gracza i obniża wartość jego **najcenniejszego** budynku o 2 (minimum 0). Nie działa na chronionych.
 
-### 5. Budowy (`resolveBuildings`)
+### 4. Budowy (`resolveBuildings`)
 
 1. Wykonaj `deferredBuildActions` z poprzedniej rundy (Inspektor). Koszt budowy (np. rabat Łowcy okazji) liczy się według `plannedProfession` zapisanej przy odkładaniu.
 2. Dla każdego gracza (w kolejności `order`):
@@ -67,6 +58,15 @@ Nie działa na chronionych.
    - **Architekt** — po budowie może zmienić kategorię ostatniego budynku.
 
 Budowa jest pomijana, jeśli gracz nie ma wystarczająco złota.
+
+### 5. Kradzieże (`resolveTheft`)
+
+**Złodziej** kradnie od celu **po budowach** — dzięki temu cel najpierw wydaje złoto na wybudowanie budynku:
+
+- **Złoto** — do 2 monet, lub
+- **Karta** — losowa karta z ręki celu
+
+Nie działa na chronionych.
 
 ### 6. Efekty końcowe (`applyEndOfRoundAbilities`)
 

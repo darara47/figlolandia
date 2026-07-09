@@ -27,6 +27,7 @@ export class LobbyService {
     maxRounds: 10,
     victoryThreshold: 50,
     eventFrequency: 0,
+    lastMoveGoldBonus: 0,
     minPlayers: 3,
     maxPlayers: 8,
     animationSpeed: 'full',

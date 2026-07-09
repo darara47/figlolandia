@@ -363,6 +363,7 @@ export class GameController {
         maxRounds: state.config.maxRounds,
         victoryThreshold: state.config.victoryThreshold,
         eventFrequency: state.config.eventFrequency,
+        lastMoveGoldBonus: state.config.lastMoveGoldBonus ?? 0,
         minPlayers: state.config.minPlayers,
         maxPlayers: state.config.maxPlayers,
         animationSpeed: state.config.animationSpeed,

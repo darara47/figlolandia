@@ -712,6 +712,7 @@ export class GameGateway
         maxRounds: state.config.maxRounds,
         victoryThreshold: state.config.victoryThreshold,
         eventFrequency: state.config.eventFrequency,
+        lastMoveGoldBonus: state.config.lastMoveGoldBonus ?? 0,
         animationSpeed: state.config.animationSpeed ?? 'full',
       },
       submittedPlayers, // Lista ID graczy, którzy zatwierdzili swoje ruchy

@@ -87,6 +87,8 @@ export interface Player {
   deferredBuildActions: PlayerAction[]; // budowy odłożone przez Inspektora na następną rundę
   urbanistPendingBuildBoost: boolean; // Urbanista bez budynków: +1 do pierwszej budowy w rundzie
   buildingsBuiltThisRound: number; // liczba budynków wybudowanych w tej rundzie
+  /** Szczęściarz: ile złota przyznano w tej rundzie (do narracji / animacji). */
+  luckyGoldGranted?: number;
 }
 
 export interface Building {
@@ -113,6 +115,7 @@ export interface GameConfig {
   maxRounds: number;
   victoryThreshold: number; // próg zwycięstwa (suma złota + wartość budynków)
   eventFrequency: number; // 0-100, częstotliwość zdarzeń w procentach
+  lastMoveGoldBonus: number; // złoto dla gracza rozstrzygniętego jako ostatni w rundzie
   minPlayers: number;
   maxPlayers: number;
   animationSpeed: AnimationSpeed;
@@ -281,6 +284,7 @@ export class RoundEngine {
       p.delayedBuildings = false;
       p.urbanistPendingBuildBoost = false;
       p.buildingsBuiltThisRound = 0;
+      p.luckyGoldGranted = undefined;
     });
 
     // Uwaga: Zdarzenia losowe są teraz rozstrzygane w fazie PREP, przed PLANNING
@@ -289,16 +293,16 @@ export class RoundEngine {
     this.applyProfessionAbilities(sortedPlayers, actions, newState);
     ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_abilities', sortedPlayers);
 
-    // 3. Kradzieże
-    this.resolveTheft(sortedPlayers, actions, newState);
-    ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_theft', sortedPlayers);
-
-    // 4. Niszczenie budynków
+    // 3. Niszczenie budynków
     this.resolveDestruction(sortedPlayers, actions, newState);
 
-    // 5. Budowy (najniższy priorytet)
+    // 4. Budowy
     this.resolveBuildings(sortedPlayers, actions, newState);
     ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_builds', sortedPlayers);
+
+    // 5. Kradzieże (Złodziej — po budowach, żeby cel najpierw wydał złoto na budowę)
+    this.resolveTheft(sortedPlayers, actions, newState);
+    ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_theft', sortedPlayers);
 
     // 6. Zastosuj efekty końcowe zawodów (np. Księgowy)
     this.applyEndOfRoundAbilities(sortedPlayers, newState);
@@ -459,6 +463,7 @@ export class RoundEngine {
         case 'lucky': {
           const goldBefore = player.gold;
           player.gold += 2;
+          player.luckyGoldGranted = 2;
           ResolutionDebug.logGoldChange(
             'RESOLUTION',
             'abilities.lucky',

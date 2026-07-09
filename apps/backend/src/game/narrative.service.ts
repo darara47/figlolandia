@@ -1,6 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { GameState, Player, PlayerAction, BUILDING_DATA, PROFESSION_DATA } from '@figlolandia/game-core';
+import { GameState, Player, PlayerAction, BUILDING_DATA, PROFESSION_DATA, Profession } from '@figlolandia/game-core';
 import { NarrativeEvent } from '../websocket/ws.types';
+
+/** Zawody rozstrzygane przed budową — animowane na początku tury gracza. */
+const PRE_BUILD_PROFESSIONS = new Set<Profession>([
+  'lucky',
+  'urbanist',
+  'diplomat',
+  'inspector',
+  'spy',
+  'politician',
+]);
+
+/** Zawody rozstrzygane po budowach — animowane na końcu tury gracza. */
+const POST_BUILD_PROFESSIONS = new Set<Profession>([
+  'thief',
+  'vandal',
+  'saboteur',
+  'architect',
+]);
 
 /**
  * Serwis generujący wydarzenia narratora na podstawie rozstrzygniętych akcji
@@ -16,9 +34,13 @@ export class NarrativeService {
     actions: Map<string, PlayerAction[]>
   ): NarrativeEvent[] {
     const events: NarrativeEvent[] = [];
-    const timestamp = Date.now();
+    let timestamp = Date.now();
 
-    // Sortuj graczy według kolejności rozstrzygania
+    const nextTimestamp = () => {
+      timestamp += 10;
+      return timestamp;
+    };
+
     const sortedPlayers = [...afterState.players].sort((a, b) => a.order - b.order);
 
     for (const player of sortedPlayers) {
@@ -26,260 +48,287 @@ export class NarrativeService {
       const beforePlayer = beforeState.players.find((p) => p.id === player.id);
       if (!beforePlayer) continue;
 
-      // Sprawdź budowy
+      const playerEvents: NarrativeEvent[] = [];
+
+      const professionActions = playerActions.filter(
+        (a) => a.type === 'use_profession' && a.professionAbility,
+      );
+
+      for (const profAction of professionActions) {
+        if (!player.profession || !PRE_BUILD_PROFESSIONS.has(player.profession)) continue;
+        const event = this.createProfessionEvent(
+          player,
+          beforePlayer,
+          afterState,
+          profAction,
+          nextTimestamp(),
+        );
+        if (event) playerEvents.push(event);
+      }
+
       const buildActions = playerActions.filter((a) => a.type === 'build');
       for (const buildAction of buildActions) {
-        if (buildAction.buildingType) {
-          const buildingData = BUILDING_DATA[buildAction.buildingType];
-          const afterBuilding = afterState.players
-            .find((p) => p.id === player.id)
-            ?.buildings.find((b) => b.type === buildAction.buildingType);
-
-          if (afterBuilding) {
-            // Oblicz koszt budowy
-            const card = buildAction.cardId
-              ? beforePlayer.cards.find((c) => c.id === buildAction.cardId)
-              : null;
-            const cost = buildAction.buildingValue ||
-              (card ? card.buildingValue : null) ||
-              buildingData.valueRange[0];
-
-            // Sprawdź czy zastosowano zniżki
-            let finalCost = cost;
-            if (player.profession === 'opportunity_hunter') {
-              finalCost = Math.max(0, finalCost - 2);
-            }
-
-            events.push({
-              type: 'build',
-              playerId: player.id,
-              playerName: player.name,
-              profession: player.profession || undefined,
-              data: {
-                buildingType: buildAction.buildingType,
-                buildingName: buildingData.name,
-                cost: finalCost,
-                buildingId: afterBuilding.id,
-              },
-              timestamp: timestamp + events.length * 10, // Małe opóźnienie między wydarzeniami
-            });
-          }
-        }
+        const event = this.createBuildEvent(
+          player,
+          beforePlayer,
+          afterState,
+          buildAction,
+          nextTimestamp(),
+        );
+        if (event) playerEvents.push(event);
       }
 
-      // Sprawdź użycie zdolności zawodowych
-      const professionActions = playerActions.filter(
-        (a) => a.type === 'use_profession' && a.professionAbility
-      );
       for (const profAction of professionActions) {
-        if (!player.profession) continue;
-
-        const professionData = PROFESSION_DATA[player.profession];
-        if (!professionData) continue;
-
-        // Generuj wydarzenie w zależności od zawodu
-        switch (player.profession) {
-          case 'architect':
-            if (profAction.buildingCategory && profAction.buildingType) {
-              const buildingData = BUILDING_DATA[profAction.buildingType];
-              events.push({
-                type: 'architect_change_category',
-                playerId: player.id,
-                playerName: player.name,
-                profession: player.profession,
-                data: {
-                  buildingType: profAction.buildingType,
-                  buildingName: buildingData.name,
-                  oldCategory: buildingData.category,
-                  newCategory: profAction.buildingCategory,
-                },
-                timestamp: timestamp + events.length * 10,
-              });
-            }
-            break;
-
-          case 'thief':
-            if (profAction.target) {
-              const target = afterState.players.find((p) => p.id === profAction.target);
-              if (target) {
-                events.push({
-                  type: 'theft',
-                  playerId: player.id,
-                  playerName: player.name,
-                  profession: player.profession,
-                  data: {
-                    targetId: profAction.target,
-                    targetName: target.name,
-                    theftType: profAction.theftTarget || 'gold',
-                  },
-                  timestamp: timestamp + events.length * 10,
-                });
-              }
-            }
-            break;
-
-          case 'vandal':
-            if (profAction.target) {
-              const target = afterState.players.find((p) => p.id === profAction.target);
-              if (target) {
-                events.push({
-                  type: 'vandal',
-                  playerId: player.id,
-                  playerName: player.name,
-                  profession: player.profession,
-                  data: {
-                    targetId: profAction.target,
-                    targetName: target.name,
-                  },
-                  timestamp: timestamp + events.length * 10,
-                });
-              }
-            }
-            break;
-
-          case 'inspector':
-            if (profAction.target) {
-              const target = afterState.players.find((p) => p.id === profAction.target);
-              if (target && target.deferredBuildActions.length > 0) {
-                events.push({
-                  type: 'inspector',
-                  playerId: player.id,
-                  playerName: player.name,
-                  profession: player.profession,
-                  data: {
-                    targetId: profAction.target,
-                    targetName: target.name,
-                  },
-                  timestamp: timestamp + events.length * 10,
-                });
-              }
-            }
-            break;
-
-          case 'lucky':
-            if (afterState.players.find((p) => p.id === player.id)!.gold > beforePlayer.gold) {
-              events.push({
-                type: 'lucky',
-                playerId: player.id,
-                playerName: player.name,
-                profession: player.profession,
-                data: {
-                  goldGained: afterState.players.find((p) => p.id === player.id)!.gold - beforePlayer.gold,
-                },
-                timestamp: timestamp + events.length * 10,
-              });
-            }
-            break;
-
-          case 'diplomat':
-            events.push({
-              type: 'diplomat',
-              playerId: player.id,
-              playerName: player.name,
-              profession: player.profession,
-              data: {},
-              timestamp: timestamp + events.length * 10,
-            });
-            break;
-
-          case 'urbanist': {
-            const afterPlayer = afterState.players.find((p) => p.id === player.id);
-            const boostedBuilding = afterPlayer?.buildings.find((afterBuilding) => {
-              const beforeBuilding = beforePlayer.buildings.find((b) => b.id === afterBuilding.id);
-              return beforeBuilding && afterBuilding.value > beforeBuilding.value;
-            });
-            const newBuildingWithBoost =
-              afterPlayer &&
-              afterPlayer.buildings.length > beforePlayer.buildings.length &&
-              afterPlayer.buildings[afterPlayer.buildings.length - 1];
-
-            events.push({
-              type: 'urbanist',
-              playerId: player.id,
-              playerName: player.name,
-              profession: player.profession,
-              data: {
-                buildingName: boostedBuilding
-                  ? BUILDING_DATA[boostedBuilding.type].name
-                  : newBuildingWithBoost
-                    ? BUILDING_DATA[newBuildingWithBoost.type].name
-                    : undefined,
-              },
-              timestamp: timestamp + events.length * 10,
-            });
-            break;
-          }
-
-          case 'saboteur':
-            if (profAction.target) {
-              const target = afterState.players.find((p) => p.id === profAction.target);
-              if (target) {
-                events.push({
-                  type: 'saboteur',
-                  playerId: player.id,
-                  playerName: player.name,
-                  profession: player.profession,
-                  data: {
-                    targetId: profAction.target,
-                    targetName: target.name,
-                  },
-                  timestamp: timestamp + events.length * 10,
-                });
-              }
-            }
-            break;
-
-          case 'politician':
-            if (profAction.taxedCategory) {
-              events.push({
-                type: 'politician_tax_category',
-                playerId: player.id,
-                playerName: player.name,
-                profession: player.profession,
-                data: {
-                  category: profAction.taxedCategory,
-                },
-                timestamp: timestamp + events.length * 10,
-              });
-            }
-            break;
-
-          case 'spy':
-            if (profAction.target) {
-              const target = afterState.players.find((p) => p.id === profAction.target);
-              if (target) {
-                events.push({
-                  type: 'spy',
-                  playerId: player.id,
-                  playerName: player.name,
-                  profession: player.profession,
-                  data: {
-                    targetId: profAction.target,
-                    targetName: target.name,
-                  },
-                  timestamp: timestamp + events.length * 10,
-                });
-              }
-            }
-            break;
-
-          default:
-            events.push({
-              type: 'profession_ability',
-              playerId: player.id,
-              playerName: player.name,
-              profession: player.profession,
-              data: {
-                professionName: professionData.name,
-              },
-              timestamp: timestamp + events.length * 10,
-            });
-            break;
-        }
+        if (!player.profession || !POST_BUILD_PROFESSIONS.has(player.profession)) continue;
+        const event = this.createProfessionEvent(
+          player,
+          beforePlayer,
+          afterState,
+          profAction,
+          nextTimestamp(),
+        );
+        if (event) playerEvents.push(event);
       }
+
+      events.push(...playerEvents);
     }
 
     return events;
   }
-}
 
+  private createBuildEvent(
+    player: Player,
+    beforePlayer: Player,
+    afterState: GameState,
+    buildAction: PlayerAction,
+    timestamp: number,
+  ): NarrativeEvent | null {
+    if (!buildAction.buildingType) return null;
+
+    const buildingData = BUILDING_DATA[buildAction.buildingType];
+    const afterBuilding = afterState.players
+      .find((p) => p.id === player.id)
+      ?.buildings.find((b) => b.type === buildAction.buildingType);
+
+    if (!afterBuilding) return null;
+
+    const card = buildAction.cardId
+      ? beforePlayer.cards.find((c) => c.id === buildAction.cardId)
+      : null;
+    const cost =
+      buildAction.buildingValue ||
+      (card ? card.buildingValue : null) ||
+      buildingData.valueRange[0];
+
+    let finalCost = cost;
+    if (player.profession === 'opportunity_hunter') {
+      finalCost = Math.max(0, finalCost - 2);
+    }
+
+    return {
+      type: 'build',
+      playerId: player.id,
+      playerName: player.name,
+      profession: player.profession || undefined,
+      data: {
+        buildingType: buildAction.buildingType,
+        buildingName: buildingData.name,
+        cost: finalCost,
+        buildingId: afterBuilding.id,
+      },
+      timestamp,
+    };
+  }
+
+  private createProfessionEvent(
+    player: Player,
+    beforePlayer: Player,
+    afterState: GameState,
+    profAction: PlayerAction,
+    timestamp: number,
+  ): NarrativeEvent | null {
+    if (!player.profession) return null;
+
+    const professionData = PROFESSION_DATA[player.profession];
+    if (!professionData) return null;
+
+    switch (player.profession) {
+      case 'architect':
+        if (profAction.buildingCategory && profAction.buildingType) {
+          const buildingData = BUILDING_DATA[profAction.buildingType];
+          return {
+            type: 'architect_change_category',
+            playerId: player.id,
+            playerName: player.name,
+            profession: player.profession,
+            data: {
+              buildingType: profAction.buildingType,
+              buildingName: buildingData.name,
+              oldCategory: buildingData.category,
+              newCategory: profAction.buildingCategory,
+            },
+            timestamp,
+          };
+        }
+        return null;
+
+      case 'thief': {
+        if (!profAction.target) return null;
+        const target = afterState.players.find((p) => p.id === profAction.target);
+        if (!target) return null;
+        return {
+          type: 'theft',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {
+            targetId: profAction.target,
+            targetName: target.name,
+            theftType: profAction.theftTarget || 'gold',
+          },
+          timestamp,
+        };
+      }
+
+      case 'vandal': {
+        if (!profAction.target) return null;
+        const target = afterState.players.find((p) => p.id === profAction.target);
+        if (!target) return null;
+        return {
+          type: 'vandal',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {
+            targetId: profAction.target,
+            targetName: target.name,
+          },
+          timestamp,
+        };
+      }
+
+      case 'inspector': {
+        if (!profAction.target) return null;
+        const target = afterState.players.find((p) => p.id === profAction.target);
+        if (!target || target.deferredBuildActions.length === 0) return null;
+        return {
+          type: 'inspector',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {
+            targetId: profAction.target,
+            targetName: target.name,
+          },
+          timestamp,
+        };
+      }
+
+      case 'lucky': {
+        const afterPlayer = afterState.players.find((p) => p.id === player.id);
+        const goldGranted = afterPlayer?.luckyGoldGranted;
+        if (!goldGranted || goldGranted <= 0) return null;
+        return {
+          type: 'lucky',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: { goldGained: goldGranted },
+          timestamp,
+        };
+      }
+
+      case 'diplomat':
+        return {
+          type: 'diplomat',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {},
+          timestamp,
+        };
+
+      case 'urbanist': {
+        const afterPlayer = afterState.players.find((p) => p.id === player.id);
+        const boostedBuilding = afterPlayer?.buildings.find((afterBuilding) => {
+          const beforeBuilding = beforePlayer.buildings.find((b) => b.id === afterBuilding.id);
+          return beforeBuilding && afterBuilding.value > beforeBuilding.value;
+        });
+        const newBuildingWithBoost =
+          afterPlayer &&
+          afterPlayer.buildings.length > beforePlayer.buildings.length &&
+          afterPlayer.buildings[afterPlayer.buildings.length - 1];
+
+        return {
+          type: 'urbanist',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {
+            buildingName: boostedBuilding
+              ? BUILDING_DATA[boostedBuilding.type].name
+              : newBuildingWithBoost
+                ? BUILDING_DATA[newBuildingWithBoost.type].name
+                : undefined,
+          },
+          timestamp,
+        };
+      }
+
+      case 'saboteur': {
+        if (!profAction.target) return null;
+        const target = afterState.players.find((p) => p.id === profAction.target);
+        if (!target) return null;
+        return {
+          type: 'saboteur',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {
+            targetId: profAction.target,
+            targetName: target.name,
+          },
+          timestamp,
+        };
+      }
+
+      case 'politician':
+        if (!profAction.taxedCategory) return null;
+        return {
+          type: 'politician_tax_category',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: { category: profAction.taxedCategory },
+          timestamp,
+        };
+
+      case 'spy': {
+        if (!profAction.target) return null;
+        const target = afterState.players.find((p) => p.id === profAction.target);
+        if (!target) return null;
+        return {
+          type: 'spy',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: {
+            targetId: profAction.target,
+            targetName: target.name,
+          },
+          timestamp,
+        };
+      }
+
+      default:
+        return {
+          type: 'profession_ability',
+          playerId: player.id,
+          playerName: player.name,
+          profession: player.profession,
+          data: { professionName: professionData.name },
+          timestamp,
+        };
+    }
+  }
+}

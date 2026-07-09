@@ -32,6 +32,7 @@ export interface GameConfigDto {
   maxRounds?: number;
   victoryThreshold?: number;
   eventFrequency?: number;
+  lastMoveGoldBonus?: number;
   minPlayers?: number;
   maxPlayers?: number;
   animationSpeed?: 'full' | 'fast' | 'off';
@@ -41,6 +42,7 @@ export interface GameConfigResponseDto {
   maxRounds: number;
   victoryThreshold: number;
   eventFrequency: number;
+  lastMoveGoldBonus: number;
   minPlayers: number;
   maxPlayers: number;
   animationSpeed: 'full' | 'fast' | 'off';

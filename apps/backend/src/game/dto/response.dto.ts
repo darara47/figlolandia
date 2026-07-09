@@ -64,6 +64,9 @@ export class GameConfigResponseDto {
   @ApiProperty({ example: 0, description: 'Częstotliwość zdarzeń (0-100%)' })
   eventFrequency: number;
 
+  @ApiProperty({ example: 0, description: 'Bonus złota za ostatni ruch w rundzie' })
+  lastMoveGoldBonus: number;
+
   @ApiProperty({ example: 3 })
   minPlayers: number;
 
