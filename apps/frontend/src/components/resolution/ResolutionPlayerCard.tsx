@@ -5,6 +5,7 @@ import { PlayerCard } from '@/src/components/player/PlayerCard';
 import { colors, shadows } from '@/src/theme/tokens';
 import { getEventEffectKind } from '@/src/utils/professionEffects';
 import { NarrativeEvent } from '@/types/websocket';
+import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
 
 interface ResolutionPlayerCardProps {
   player: PlayerDto;
@@ -13,6 +14,8 @@ interface ResolutionPlayerCardProps {
   dimmed: boolean;
   useSpotlight: boolean;
   highlightNew: string[];
+  goldFloats?: GoldFloatItem[];
+  onGoldFloatDone?: (id: string) => void;
   shake: boolean;
   shield: boolean;
   flash: boolean;
@@ -26,6 +29,8 @@ export const ResolutionPlayerCard = ({
   dimmed,
   useSpotlight,
   highlightNew,
+  goldFloats = [],
+  onGoldFloatDone,
   shake,
   shield,
   flash,
@@ -85,6 +90,7 @@ export const ResolutionPlayerCard = ({
   }, [flash, flashAnim]);
 
   const effectKind = currentEvent && isActive ? getEventEffectKind(currentEvent) : null;
+  const showProfessionEffect = effectKind && effectKind !== 'economy';
 
   return (
     <Animated.View
@@ -111,9 +117,9 @@ export const ResolutionPlayerCard = ({
         ]}
       />
 
-      {effectKind === 'economy' && isActive && (
+      {showProfessionEffect && isActive && (
         <View style={styles.effectBadge}>
-          <Animated.Text style={styles.effectText}>💰</Animated.Text>
+          <Animated.Text style={styles.effectText}>✦</Animated.Text>
         </View>
       )}
 
@@ -122,6 +128,8 @@ export const ResolutionPlayerCard = ({
         isMe={isMe}
         showProfession
         highlightNew={highlightNew}
+        goldFloats={goldFloats}
+        onGoldFloatDone={onGoldFloatDone}
         narrativeEvents={currentEvent && isActive ? [currentEvent] : []}
       />
     </Animated.View>

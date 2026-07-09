@@ -11,6 +11,7 @@ import { NarrativeEvent } from '@/types/websocket';
 import { Building2 } from 'lucide-react-native';
 import { colors, spacing } from '@/src/theme/tokens';
 import { getPlayerStats } from '@/src/utils/playerStats';
+import { GoldFloatItem, GoldFloatLabel } from '@/src/components/design-system/GoldFloatLabel';
 
 interface PlayerCardProps {
   player: PlayerDto;
@@ -21,6 +22,8 @@ interface PlayerCardProps {
   showProfession?: boolean;
   compact?: boolean;
   highlightNew?: string[];
+  goldFloats?: GoldFloatItem[];
+  onGoldFloatDone?: (id: string) => void;
 }
 
 export const PlayerCard = ({
@@ -32,6 +35,8 @@ export const PlayerCard = ({
   showProfession = true,
   compact = false,
   highlightNew = [],
+  goldFloats = [],
+  onGoldFloatDone,
 }: PlayerCardProps) => {
   const professionData = player.profession
     ? PROFESSION_DATA[player.profession as keyof typeof PROFESSION_DATA]
@@ -44,6 +49,10 @@ export const PlayerCard = ({
 
   const goldAnim = useRef(new Animated.Value(player.gold)).current;
   const [displayedGold, setDisplayedGold] = useState(player.gold);
+
+  const handleGoldFloatDone = (id: string) => {
+    onGoldFloatDone?.(id);
+  };
 
   useEffect(() => {
     const listener = goldAnim.addListener(({ value }) => {
@@ -94,9 +103,22 @@ export const PlayerCard = ({
       <View style={[styles.section, styles.statsRow]}>
         <View style={styles.statColumn}>
           <Text variant="label">Złoto</Text>
-          <Text variant="stat" style={{ color: colors.gold.DEFAULT }}>
-            {displayedGold}
-          </Text>
+          <View style={styles.goldStatRow}>
+            <Text variant="stat" style={{ color: colors.gold.DEFAULT }}>
+              {displayedGold}
+            </Text>
+            {goldFloats.length > 0 && (
+              <View style={styles.goldFloatSlot}>
+                {goldFloats.map((item) => (
+                  <GoldFloatLabel
+                    key={item.id}
+                    item={item}
+                    onDone={handleGoldFloatDone}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
         </View>
         <View style={[styles.statColumn, styles.statColumnCenter]}>
           <Row gap={4} align="center">
@@ -149,6 +171,17 @@ const styles = StyleSheet.create({
   },
   statColumn: {
     flex: 1,
+  },
+  goldStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 10,
+  },
+  goldFloatSlot: {
+    minWidth: 32,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   statColumnCenter: {
     alignItems: 'center',

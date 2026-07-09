@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerDto } from '@/src/types/api';
 import { NarrativeEvent } from '@/types/websocket';
 import { BUILDING_DATA } from '@figlolandia/game-core';
+import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
+import { getGoldDeltaForEvent } from '@/src/utils/goldDelta';
 
 type AnimationSpeed = 'full' | 'fast' | 'off';
 
@@ -19,16 +21,28 @@ export interface PlayerTurn {
   events: NarrativeEvent[];
 }
 
-const isBuildEvent = (event: NarrativeEvent) =>
-  event.type === 'build' || event.type === 'architect_change_category';
+const BUILD_AT = 0.38;
+const PROFESSION_AT = 0.68;
+
+const isBuildEvent = (event: NarrativeEvent) => event.type === 'build';
 
 const turnDurationMs = (speed: AnimationSpeed, fastMultiplier: number): number => {
   const base = speed === 'full' ? 3500 : speed === 'fast' ? 1000 : 400;
   return Math.max(200, base / fastMultiplier);
 };
 
+const segmentTurnEvents = (events: NarrativeEvent[]) => {
+  const pureBuilds = events.filter(isBuildEvent);
+  const otherEvents = events.filter((e) => !isBuildEvent(e));
+  return {
+    initialBuilds: pureBuilds.slice(0, 1),
+    professionBuilds: pureBuilds.slice(1),
+    otherEvents,
+  };
+};
+
 const applyEventToPlayer = (player: PlayerDto, event: NarrativeEvent): PlayerDto => {
-  if (isBuildEvent(event)) {
+  if (event.type === 'build') {
     const buildingType = event.data?.buildingType as string | undefined;
     if (!buildingType) return player;
     const buildingData = BUILDING_DATA[buildingType as keyof typeof BUILDING_DATA];
@@ -45,6 +59,18 @@ const applyEventToPlayer = (player: PlayerDto, event: NarrativeEvent): PlayerDto
       cards: event.data?.cardId
         ? player.cards.filter((c) => c.id !== event.data?.cardId)
         : player.cards,
+    };
+  }
+
+  if (event.type === 'architect_change_category') {
+    const buildingType = event.data?.buildingType as string | undefined;
+    const newCategory = event.data?.newCategory as string | undefined;
+    if (!buildingType || !newCategory) return player;
+    return {
+      ...player,
+      buildings: player.buildings.map((b) =>
+        b.type === buildingType ? { ...b, category: newCategory } : b,
+      ),
     };
   }
 
@@ -90,12 +116,12 @@ export const useResolutionPlayback = ({
   const [currentEvent, setCurrentEvent] = useState<NarrativeEvent | null>(null);
   const [turnIndex, setTurnIndex] = useState(0);
   const [highlightNewByPlayer, setHighlightNewByPlayer] = useState<Record<string, string[]>>({});
+  const [goldFloats, setGoldFloats] = useState<GoldFloatItem[]>([]);
   const [shakeTargetId, setShakeTargetId] = useState<string | null>(null);
   const [shieldPlayerId, setShieldPlayerId] = useState<string | null>(null);
   const [flashTargetId, setFlashTargetId] = useState<string | null>(null);
   const [playbackComplete, setPlaybackComplete] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const buildTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const playersRef = useRef(players);
 
   const playerTurns: PlayerTurn[] = useMemo(() => {
@@ -112,13 +138,25 @@ export const useResolutionPlayback = ({
   const speedMultiplier = localSkipVoted ? 2 : 1;
 
   const clearTimers = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    if (buildTimerRef.current) {
-      clearTimeout(buildTimerRef.current);
-      buildTimerRef.current = null;
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  }, []);
+
+  const schedule = useCallback((fn: () => void, delay: number) => {
+    const id = setTimeout(fn, delay);
+    timersRef.current.push(id);
+  }, []);
+
+  const removeGoldFloat = useCallback((id: string) => {
+    setGoldFloats((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  const emitGoldFloats = useCallback((playerId: string, events: NarrativeEvent[]) => {
+    for (const event of events) {
+      const delta = getGoldDeltaForEvent(event);
+      if (delta === null || delta === 0) continue;
+      const floatId = `${playerId}-${event.timestamp}-${Math.random()}`;
+      setGoldFloats((prev) => [...prev, { id: floatId, playerId, amount: delta }]);
     }
   }, []);
 
@@ -150,6 +188,20 @@ export const useResolutionPlayback = ({
     }
   };
 
+  const applyEventBatch = useCallback(
+    (events: NarrativeEvent[], options?: { highlightBuilds?: boolean }) => {
+      if (events.length === 0) return;
+      const updated = applyEvents(playersRef.current, events);
+      playersRef.current = updated;
+      setDisplayPlayers(updated);
+      if (options?.highlightBuilds) {
+        setHighlightNewByPlayer((prev) => collectBuildHighlights(events, prev));
+      }
+      emitGoldFloats(events[0].playerId, events);
+    },
+    [emitGoldFloats],
+  );
+
   useEffect(() => {
     if (!active || phase !== 'RESOLUTION') {
       if (phase !== 'RESOLUTION') {
@@ -163,6 +215,7 @@ export const useResolutionPlayback = ({
     setTurnIndex(0);
     setPlaybackComplete(false);
     setHighlightNewByPlayer({});
+    setGoldFloats([]);
     setShakeTargetId(null);
     setShieldPlayerId(null);
     setFlashTargetId(null);
@@ -180,7 +233,16 @@ export const useResolutionPlayback = ({
       playersRef.current = nextPlayers;
       setDisplayPlayers(nextPlayers);
       setHighlightNewByPlayer(collectBuildHighlights(narrativeEvents, {}));
-      timerRef.current = setTimeout(() => finishPlayback(), 600);
+      for (const event of narrativeEvents) {
+        const delta = getGoldDeltaForEvent(event);
+        if (delta !== null && delta !== 0) {
+          setGoldFloats((prev) => [
+            ...prev,
+            { id: `${event.playerId}-${event.timestamp}`, playerId: event.playerId, amount: delta },
+          ]);
+        }
+      }
+      schedule(() => finishPlayback(), 600);
       return () => clearTimers();
     }
 
@@ -191,33 +253,35 @@ export const useResolutionPlayback = ({
 
     const turn = playerTurns[turnIndex];
     const duration = turnDurationMs(animationSpeed, speedMultiplier);
-    const buildEvents = turn.events.filter(isBuildEvent);
-    const otherEvents = turn.events.filter((e) => !isBuildEvent(e));
-    const buildRevealAt = buildEvents.length > 0 ? Math.round(duration * 0.42) : null;
+    const { initialBuilds, professionBuilds, otherEvents } = segmentTurnEvents(turn.events);
 
     setActivePlayerId(turn.playerId);
-    setCurrentEvent(turn.events[0] ?? null);
+    setCurrentEvent(initialBuilds[0] ?? otherEvents[0] ?? turn.events[0] ?? null);
 
-    if (buildRevealAt !== null) {
-      buildTimerRef.current = setTimeout(() => {
-        const updated = applyEvents(playersRef.current, buildEvents);
-        playersRef.current = updated;
-        setDisplayPlayers(updated);
-        setHighlightNewByPlayer((prev) => collectBuildHighlights(buildEvents, prev));
-      }, buildRevealAt);
+    if (initialBuilds.length > 0) {
+      schedule(() => {
+        applyEventBatch(initialBuilds, { highlightBuilds: true });
+        setCurrentEvent(initialBuilds[0]);
+      }, Math.round(duration * BUILD_AT));
     }
 
-    timerRef.current = setTimeout(() => {
-      if (buildEvents.length > 0 && otherEvents.length > 0) {
-        const updated = applyEvents(playersRef.current, otherEvents);
-        playersRef.current = updated;
-        setDisplayPlayers(updated);
+    if (professionBuilds.length > 0) {
+      schedule(() => {
+        applyEventBatch(professionBuilds, { highlightBuilds: true });
+        setCurrentEvent(professionBuilds[0]);
+      }, Math.round(duration * PROFESSION_AT));
+    } else if (otherEvents.length > 0) {
+      schedule(() => {
+        setCurrentEvent(otherEvents[0]);
+      }, Math.round(duration * PROFESSION_AT));
+    }
+
+    schedule(() => {
+      if (otherEvents.length > 0) {
+        applyEventBatch(otherEvents);
         triggerInteractionEffects(otherEvents);
-      } else if (buildEvents.length === 0) {
-        const updated = applyEvents(playersRef.current, turn.events);
-        playersRef.current = updated;
-        setDisplayPlayers(updated);
-        setHighlightNewByPlayer((prev) => collectBuildHighlights(turn.events, prev));
+      } else if (initialBuilds.length === 0 && professionBuilds.length === 0) {
+        applyEventBatch(turn.events, { highlightBuilds: true });
         triggerInteractionEffects(turn.events);
       }
 
@@ -236,6 +300,8 @@ export const useResolutionPlayback = ({
     narrativeEvents,
     finishPlayback,
     clearTimers,
+    schedule,
+    applyEventBatch,
   ]);
 
   useEffect(() => {
@@ -245,12 +311,23 @@ export const useResolutionPlayback = ({
     }
   }, [phase, players]);
 
+  const goldFloatsByPlayer = useMemo(() => {
+    const map: Record<string, GoldFloatItem[]> = {};
+    for (const f of goldFloats) {
+      if (!map[f.playerId]) map[f.playerId] = [];
+      map[f.playerId].push(f);
+    }
+    return map;
+  }, [goldFloats]);
+
   return {
     displayPlayers,
     activePlayerId,
     currentEvent,
     playerTurns,
     highlightNewByPlayer,
+    goldFloatsByPlayer,
+    removeGoldFloat,
     shakeTargetId,
     shieldPlayerId,
     flashTargetId,

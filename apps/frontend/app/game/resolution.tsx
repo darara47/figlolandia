@@ -100,6 +100,8 @@ export default function ResolutionScreen() {
           dimmed={!!playback.activePlayerId && player.id !== playback.activePlayerId}
           useSpotlight={playback.useSpotlight}
           highlightNew={playback.highlightNewByPlayer[player.id] ?? []}
+          goldFloats={playback.goldFloatsByPlayer[player.id] ?? []}
+          onGoldFloatDone={playback.removeGoldFloat}
           shake={player.id === playback.shakeTargetId}
           shield={player.id === playback.shieldPlayerId}
           flash={player.id === playback.flashTargetId}

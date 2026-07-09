@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, ScrollView, Pressable, Alert, StyleSheet, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { ChevronsUpDown } from 'lucide-react-native';
 import { useGameStore } from '@/src/store/game.store';
@@ -15,6 +15,11 @@ import { PROFESSION_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { CardDto } from '@/src/types/api';
 import { colors, radius, spacing } from '@/src/theme/tokens';
 import { sortPlayersByJoinOrder } from '@/src/utils/players';
+import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
+import { PlayerDto } from '@/src/types/api';
+
+const getRoundStartGoldDelta = (player: PlayerDto, lastOrder: number): number =>
+  2 + (player.order === lastOrder ? 1 : 0);
 
 const TAX_CATEGORIES: { id: string; label: string }[] = [
   { id: 'education', label: 'Edukacja' },
@@ -49,6 +54,45 @@ export default function PlanningScreen() {
   const [thiefTheftTarget, setThiefTheftTarget] = useState<'gold' | 'card'>('gold');
   const [selectedTaxCategory, setSelectedTaxCategory] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number>(PLANNING_TOTAL_MS);
+  const [roundGoldFloats, setRoundGoldFloats] = useState<Record<string, GoldFloatItem[]>>({});
+  const prepFloatShownAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (phase !== 'PLANNING' || !planningPhaseStartTime) {
+      if (phase !== 'PLANNING') {
+        prepFloatShownAt.current = null;
+        setRoundGoldFloats({});
+      }
+      return;
+    }
+
+    if (prepFloatShownAt.current === planningPhaseStartTime) {
+      return;
+    }
+
+    const currentPlayers = useGameStore.getState().players;
+    if (currentPlayers.length === 0) {
+      return;
+    }
+
+    prepFloatShownAt.current = planningPhaseStartTime;
+    const lastOrder = Math.max(0, ...currentPlayers.map((p) => p.order));
+    const floats: Record<string, GoldFloatItem[]> = {};
+    for (const player of currentPlayers) {
+      const delta = getRoundStartGoldDelta(player, lastOrder);
+      floats[player.id] = [
+        {
+          id: `${player.id}-prep-${planningPhaseStartTime}`,
+          playerId: player.id,
+          amount: delta,
+        },
+      ];
+    }
+    setRoundGoldFloats(floats);
+
+    const timer = setTimeout(() => setRoundGoldFloats({}), 3200);
+    return () => clearTimeout(timer);
+  }, [phase, planningPhaseStartTime]);
 
   const myPlanningStatus = playerId ? planningStatus[playerId] : undefined;
   const serverBuildConfirmed = !!myPlanningStatus?.buildConfirmed;
@@ -261,6 +305,7 @@ export default function PlanningScreen() {
                 buildConfirmed={!!status?.buildConfirmed}
                 abilityConfirmed={!!status?.abilityConfirmed}
                 showProfession={false}
+                goldFloats={roundGoldFloats[player.id] ?? []}
               />
             </View>
           );
