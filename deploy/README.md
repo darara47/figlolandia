@@ -29,21 +29,35 @@ pm2 delete figlolandia 2>/dev/null || true
 ./deploy/start.sh
 ```
 
-`start.sh` uruchamia dwa procesy PM2:
+`start.sh` uruchamia proces PM2 `figlolandia` (`pnpm start:prod` na porcie 3008).
 
-| Proces        | Opis                          |
-|---------------|-------------------------------|
-| `figlolandia` | `pnpm start:prod` (port 3008) |
-| `cloudflared` | tunel do localhost:3008       |
+Tunel Cloudflare uruchamiasz **osobno** (patrz sekcja poniżej).
 
 ## Codzienne operacje
 
 ```bash
-./deploy/start.sh     # start (lub restart jeśli już zarejestrowane)
-./deploy/stop.sh      # stop obu procesów
-./deploy/restart.sh   # restart tylko aplikacji (tunnel zostaje)
-./deploy/status.sh    # status PM2 + publiczny URL
+./deploy/start.sh     # start aplikacji
+./deploy/stop.sh      # stop aplikacji
+./deploy/restart.sh   # restart aplikacji
+./deploy/status.sh    # status aplikacji
 ```
+
+## Cloudflare Tunnel (osobno)
+
+Skrypty `deploy/` nie zarządzają `cloudflared`. Tunel startujesz ręcznie przez PM2:
+
+```bash
+# quick tunnel (trycloudflare.com)
+pm2 start ecosystem.config.js --only cloudflared
+
+# stop tunelu
+pm2 stop cloudflared
+
+# logi
+pm2 logs cloudflared
+```
+
+Konfiguracja tunelu (port, token, domena) pochodzi z `deploy/config.env` i `deploy/config.local.env` — patrz sekcje poniżej.
 
 ## Aktualizacja kodu
 
@@ -102,7 +116,7 @@ cloudflared tunnel --url http://127.0.0.1:3008
 ```
 
 - Publiczny adres: losowy `https://*.trycloudflare.com`
-- URL pojawia się w `./deploy/status.sh` i w logach cloudflared
+- URL w logach: `pm2 logs cloudflared`
 - **URL zmienia się** po restarcie procesu `cloudflared` (nie restartuj go bez potrzeby)
 
 Lokalny dostęp: `http://127.0.0.1:3008`
@@ -148,7 +162,8 @@ CLOUDFLARE_TUNNEL_TOKEN=<token z dashboardu>
 ```bash
 ./deploy/stop.sh
 ./deploy/start.sh
-./deploy/status.sh   # pokaże https://figlolandia.pl
+pm2 start ecosystem.config.js --only cloudflared
+./deploy/status.sh
 ```
 
 ## Zmienne aplikacji
