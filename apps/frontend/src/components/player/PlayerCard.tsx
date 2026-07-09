@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Animated, StyleSheet } from 'react-native';
 import { Card } from '../ui/Card';
 import { Text } from '../ui/Text';
 import { Row } from '../ui/Stack';
 import { PlayerDto } from '../../types/api';
-import { PROFESSION_DATA } from '@figlolandia/game-core';
+import { PROFESSION_DATA, UI_ANIMATION_MS } from '@figlolandia/game-core';
 import { PlayerSkyline } from '../design-system/PlayerSkyline';
 import { StatusPill } from '../design-system/StatusPill';
 import { NarrativeEvent } from '@/types/websocket';
@@ -24,6 +24,8 @@ interface PlayerCardProps {
   highlightNew?: string[];
   goldFloats?: GoldFloatItem[];
   onGoldFloatDone?: (id: string) => void;
+  /** Start gold counter from this value (e.g. before round income). */
+  goldCounterFrom?: number;
 }
 
 export const PlayerCard = ({
@@ -37,6 +39,7 @@ export const PlayerCard = ({
   highlightNew = [],
   goldFloats = [],
   onGoldFloatDone,
+  goldCounterFrom,
 }: PlayerCardProps) => {
   const professionData = player.profession
     ? PROFESSION_DATA[player.profession as keyof typeof PROFESSION_DATA]
@@ -50,23 +53,31 @@ export const PlayerCard = ({
   const goldAnim = useRef(new Animated.Value(player.gold)).current;
   const [displayedGold, setDisplayedGold] = useState(player.gold);
 
-  const handleGoldFloatDone = (id: string) => {
-    onGoldFloatDone?.(id);
-  };
+  const handleGoldFloatDone = useCallback(
+    (id: string) => {
+      onGoldFloatDone?.(id);
+    },
+    [onGoldFloatDone],
+  );
 
   useEffect(() => {
     const listener = goldAnim.addListener(({ value }) => {
       setDisplayedGold(Math.round(value));
     });
 
+    if (goldCounterFrom !== undefined && goldCounterFrom !== player.gold) {
+      goldAnim.setValue(goldCounterFrom);
+      setDisplayedGold(Math.round(goldCounterFrom));
+    }
+
     Animated.timing(goldAnim, {
       toValue: player.gold,
-      duration: 500,
+      duration: UI_ANIMATION_MS.goldCounter,
       useNativeDriver: false,
     }).start();
 
     return () => goldAnim.removeListener(listener);
-  }, [player.gold, goldAnim]);
+  }, [player.gold, goldCounterFrom, goldAnim]);
 
   const newBuildingIds = [
     ...highlightNew,
@@ -107,17 +118,15 @@ export const PlayerCard = ({
             <Text variant="stat" style={{ color: colors.gold.DEFAULT }}>
               {displayedGold}
             </Text>
-            {goldFloats.length > 0 && (
-              <View style={styles.goldFloatSlot}>
-                {goldFloats.map((item) => (
-                  <GoldFloatLabel
-                    key={item.id}
-                    item={item}
-                    onDone={handleGoldFloatDone}
-                  />
-                ))}
-              </View>
-            )}
+            <View style={styles.goldFloatSlot}>
+              {goldFloats.map((item) => (
+                <GoldFloatLabel
+                  key={item.id}
+                  item={item}
+                  onDone={handleGoldFloatDone}
+                />
+              ))}
+            </View>
           </View>
         </View>
         <View style={[styles.statColumn, styles.statColumnCenter]}>
@@ -179,9 +188,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   goldFloatSlot: {
-    minWidth: 32,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+    width: 44,
+    height: 24,
+    position: 'relative',
   },
   statColumnCenter: {
     alignItems: 'center',

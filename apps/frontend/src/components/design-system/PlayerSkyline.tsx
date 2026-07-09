@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Pressable, ScrollView, Animated, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BUILDING_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
+import { BUILDING_DATA, CATEGORY_COLORS, UI_ANIMATION_MS } from '@figlolandia/game-core';
 import { BuildingDto } from '@/src/types/api';
 import { getBuildingIcon } from '@/src/theme/buildingIcons';
 import { Text } from '@/src/components/ui/Text';
@@ -48,13 +48,13 @@ const SkylineBuilding = ({
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
-          tension: 55,
-          friction: 6,
+          tension: UI_ANIMATION_MS.spotlightSpring.tension,
+          friction: UI_ANIMATION_MS.spotlightSpring.friction,
           useNativeDriver: true,
         }),
         Animated.timing(rotateAnim, {
           toValue: 1,
-          duration: 450,
+          duration: UI_ANIMATION_MS.buildingEntrance,
           useNativeDriver: true,
         }),
       ]).start();

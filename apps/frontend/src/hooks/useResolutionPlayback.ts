@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlayerDto } from '@/src/types/api';
 import { NarrativeEvent } from '@/types/websocket';
-import { BUILDING_DATA } from '@figlolandia/game-core';
+import { BUILDING_DATA, getResolutionTurnDurationMs, RESOLUTION_BUILD_AT, RESOLUTION_PROFESSION_AT, RESOLUTION_TURN_GAP_MS } from '@figlolandia/game-core';
 import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
 import { getGoldDeltaForEvent } from '@/src/utils/goldDelta';
 
@@ -21,15 +21,13 @@ export interface PlayerTurn {
   events: NarrativeEvent[];
 }
 
-const BUILD_AT = 0.38;
-const PROFESSION_AT = 0.68;
+const BUILD_AT = RESOLUTION_BUILD_AT;
+const PROFESSION_AT = RESOLUTION_PROFESSION_AT;
 
 const isBuildEvent = (event: NarrativeEvent) => event.type === 'build';
 
-const turnDurationMs = (speed: AnimationSpeed, fastMultiplier: number): number => {
-  const base = speed === 'full' ? 3500 : speed === 'fast' ? 1000 : 400;
-  return Math.max(200, base / fastMultiplier);
-};
+const turnDurationMs = (speed: AnimationSpeed, fastMultiplier: number): number =>
+  getResolutionTurnDurationMs(speed, fastMultiplier);
 
 const segmentTurnEvents = (events: NarrativeEvent[]) => {
   const pureBuilds = events.filter(isBuildEvent);
@@ -155,8 +153,11 @@ export const useResolutionPlayback = ({
     for (const event of events) {
       const delta = getGoldDeltaForEvent(event);
       if (delta === null || delta === 0) continue;
-      const floatId = `${playerId}-${event.timestamp}-${Math.random()}`;
-      setGoldFloats((prev) => [...prev, { id: floatId, playerId, amount: delta }]);
+      const floatId = `${playerId}-${event.timestamp}-${event.type}-${delta}`;
+      setGoldFloats((prev) => {
+        if (prev.some((f) => f.id === floatId)) return prev;
+        return [...prev, { id: floatId, playerId, amount: delta }];
+      });
     }
   }, []);
 
@@ -285,7 +286,9 @@ export const useResolutionPlayback = ({
         triggerInteractionEffects(turn.events);
       }
 
-      setTurnIndex((i) => i + 1);
+      schedule(() => {
+        setTurnIndex((i) => i + 1);
+      }, RESOLUTION_TURN_GAP_MS);
     }, duration);
 
     return () => clearTimers();

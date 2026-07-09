@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, ScrollView, Pressable, Alert, StyleSheet, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { ChevronsUpDown } from 'lucide-react-native';
 import { useGameStore } from '@/src/store/game.store';
@@ -20,6 +20,11 @@ import { PlayerDto } from '@/src/types/api';
 
 const getRoundStartGoldDelta = (player: PlayerDto, lastOrder: number): number =>
   2 + (player.order === lastOrder ? 1 : 0);
+
+const shouldShowRoundStartGold = (round: number, player: PlayerDto): boolean => {
+  if (round > 1) return true;
+  return player.profession === 'lucky';
+};
 
 const TAX_CATEGORIES: { id: string; label: string }[] = [
   { id: 'education', label: 'Edukacja' },
@@ -57,6 +62,19 @@ export default function PlanningScreen() {
   const [roundGoldFloats, setRoundGoldFloats] = useState<Record<string, GoldFloatItem[]>>({});
   const prepFloatShownAt = useRef<number | null>(null);
 
+  const removeRoundGoldFloat = useCallback((id: string) => {
+    setRoundGoldFloats((prev) => {
+      const next: Record<string, GoldFloatItem[]> = {};
+      for (const [playerId, floats] of Object.entries(prev)) {
+        const filtered = floats.filter((f) => f.id !== id);
+        if (filtered.length > 0) {
+          next[playerId] = filtered;
+        }
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (phase !== 'PLANNING' || !planningPhaseStartTime) {
       if (phase !== 'PLANNING') {
@@ -70,7 +88,7 @@ export default function PlanningScreen() {
       return;
     }
 
-    const currentPlayers = useGameStore.getState().players;
+    const { players: currentPlayers, round: currentRound } = useGameStore.getState();
     if (currentPlayers.length === 0) {
       return;
     }
@@ -79,6 +97,9 @@ export default function PlanningScreen() {
     const lastOrder = Math.max(0, ...currentPlayers.map((p) => p.order));
     const floats: Record<string, GoldFloatItem[]> = {};
     for (const player of currentPlayers) {
+      if (!shouldShowRoundStartGold(currentRound, player)) {
+        continue;
+      }
       const delta = getRoundStartGoldDelta(player, lastOrder);
       floats[player.id] = [
         {
@@ -89,9 +110,6 @@ export default function PlanningScreen() {
       ];
     }
     setRoundGoldFloats(floats);
-
-    const timer = setTimeout(() => setRoundGoldFloats({}), 3200);
-    return () => clearTimeout(timer);
   }, [phase, planningPhaseStartTime]);
 
   const myPlanningStatus = playerId ? planningStatus[playerId] : undefined;
@@ -297,6 +315,7 @@ export default function PlanningScreen() {
         </Text>
         {sortedPlayers.map((player) => {
           const status = planningStatus[player.id];
+          const prepFloat = roundGoldFloats[player.id]?.[0];
           return (
             <View key={player.id} style={styles.playerCardWrap}>
               <PlayerCard
@@ -306,6 +325,10 @@ export default function PlanningScreen() {
                 abilityConfirmed={!!status?.abilityConfirmed}
                 showProfession={false}
                 goldFloats={roundGoldFloats[player.id] ?? []}
+                onGoldFloatDone={removeRoundGoldFloat}
+                goldCounterFrom={
+                  prepFloat ? player.gold - prepFloat.amount : undefined
+                }
               />
             </View>
           );

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { View, Pressable, Animated, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BUILDING_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
+import { BUILDING_DATA, CATEGORY_COLORS, UI_ANIMATION_MS } from '@figlolandia/game-core';
 import { CardDto, BuildingDto } from '@/src/types/api';
 import { getBuildingIcon } from '@/src/theme/buildingIcons';
 import { Text } from '@/src/components/ui/Text';
@@ -78,18 +78,18 @@ export const BuildingCard = ({
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
-          tension: 50,
-          friction: 6,
+          tension: UI_ANIMATION_MS.spotlightSpring.tension,
+          friction: UI_ANIMATION_MS.spotlightSpring.friction,
           useNativeDriver: true,
         }),
         Animated.timing(rotateAnim, {
           toValue: 1,
-          duration: 450,
+          duration: UI_ANIMATION_MS.buildingEntrance,
           useNativeDriver: true,
         }),
         Animated.timing(opacityAnim, {
           toValue: 1,
-          duration: 300,
+          duration: UI_ANIMATION_MS.buildingRotate,
           useNativeDriver: true,
         }),
       ]),

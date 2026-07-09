@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CATEGORY_COLORS = exports.HIDDEN_PROFESSIONS = exports.RoundEngine = exports.isResolutionDebugEnabled = exports.ResolutionDebug = exports.PROFESSION_DATA = exports.BUILDING_DATA = void 0;
+exports.CATEGORY_COLORS = exports.HIDDEN_PROFESSIONS = exports.RoundEngine = exports.UI_ANIMATION_MS = exports.getResolutionAdvanceDelayMs = exports.getResolutionTurnDurationMs = exports.goldFloatTotalMs = exports.GOLD_FLOAT_MS = exports.RESOLUTION_TURN_GAP_MS = exports.RESOLUTION_PROFESSION_AT = exports.RESOLUTION_BUILD_AT = exports.RESOLUTION_TURN_MS = exports.isResolutionDebugEnabled = exports.ResolutionDebug = exports.PROFESSION_DATA = exports.BUILDING_DATA = void 0;
 exports.generateGameId = generateGameId;
 exports.generatePlayerId = generatePlayerId;
 exports.generateGamePin = generateGamePin;
@@ -68,6 +68,16 @@ const resolution_debug_1 = require("./resolution-debug");
 var resolution_debug_2 = require("./resolution-debug");
 Object.defineProperty(exports, "ResolutionDebug", { enumerable: true, get: function () { return resolution_debug_2.ResolutionDebug; } });
 Object.defineProperty(exports, "isResolutionDebugEnabled", { enumerable: true, get: function () { return resolution_debug_2.isResolutionDebugEnabled; } });
+var animationTiming_1 = require("./animationTiming");
+Object.defineProperty(exports, "RESOLUTION_TURN_MS", { enumerable: true, get: function () { return animationTiming_1.RESOLUTION_TURN_MS; } });
+Object.defineProperty(exports, "RESOLUTION_BUILD_AT", { enumerable: true, get: function () { return animationTiming_1.RESOLUTION_BUILD_AT; } });
+Object.defineProperty(exports, "RESOLUTION_PROFESSION_AT", { enumerable: true, get: function () { return animationTiming_1.RESOLUTION_PROFESSION_AT; } });
+Object.defineProperty(exports, "RESOLUTION_TURN_GAP_MS", { enumerable: true, get: function () { return animationTiming_1.RESOLUTION_TURN_GAP_MS; } });
+Object.defineProperty(exports, "GOLD_FLOAT_MS", { enumerable: true, get: function () { return animationTiming_1.GOLD_FLOAT_MS; } });
+Object.defineProperty(exports, "goldFloatTotalMs", { enumerable: true, get: function () { return animationTiming_1.goldFloatTotalMs; } });
+Object.defineProperty(exports, "getResolutionTurnDurationMs", { enumerable: true, get: function () { return animationTiming_1.getResolutionTurnDurationMs; } });
+Object.defineProperty(exports, "getResolutionAdvanceDelayMs", { enumerable: true, get: function () { return animationTiming_1.getResolutionAdvanceDelayMs; } });
+Object.defineProperty(exports, "UI_ANIMATION_MS", { enumerable: true, get: function () { return animationTiming_1.UI_ANIMATION_MS; } });
 // Round Engine - główna logika rozstrzygania
 class RoundEngine {
     /**

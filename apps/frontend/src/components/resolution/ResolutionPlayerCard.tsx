@@ -3,6 +3,7 @@ import { View, Animated, StyleSheet, Pressable } from 'react-native';
 import { PlayerDto } from '@/src/types/api';
 import { PlayerCard } from '@/src/components/player/PlayerCard';
 import { colors, shadows } from '@/src/theme/tokens';
+import { UI_ANIMATION_MS } from '@figlolandia/game-core';
 import { getEventEffectKind } from '@/src/utils/professionEffects';
 import { NarrativeEvent } from '@/types/websocket';
 import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
@@ -41,16 +42,18 @@ export const ResolutionPlayerCard = ({
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const flashAnim = useRef(new Animated.Value(0)).current;
 
+  const cardTransitionMs = UI_ANIMATION_MS.cardTransition;
+
   useEffect(() => {
     if (!useSpotlight) {
       Animated.timing(scaleAnim, {
         toValue: isActive ? 1.02 : 1,
-        duration: 200,
+        duration: cardTransitionMs,
         useNativeDriver: true,
       }).start();
       Animated.timing(opacityAnim, {
         toValue: 1,
-        duration: 200,
+        duration: cardTransitionMs,
         useNativeDriver: true,
       }).start();
       return;
@@ -59,33 +62,33 @@ export const ResolutionPlayerCard = ({
     Animated.parallel([
       Animated.timing(opacityAnim, {
         toValue: dimmed ? 0.35 : 1,
-        duration: 200,
+        duration: cardTransitionMs,
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
         toValue: isActive ? 1.04 : 1,
-        tension: 80,
-        friction: 10,
+        tension: UI_ANIMATION_MS.spotlightSpring.tension,
+        friction: UI_ANIMATION_MS.spotlightSpring.friction,
         useNativeDriver: true,
       }),
     ]).start();
-  }, [isActive, dimmed, useSpotlight, scaleAnim, opacityAnim]);
+  }, [isActive, dimmed, useSpotlight, scaleAnim, opacityAnim, cardTransitionMs]);
 
   useEffect(() => {
     if (!shake) return;
     Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -4, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 4, duration: 80, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -4, duration: 80, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 4, duration: 80, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 80, useNativeDriver: true }),
     ]).start();
   }, [shake, shakeAnim]);
 
   useEffect(() => {
     if (!flash) return;
     Animated.sequence([
-      Animated.timing(flashAnim, { toValue: 1, duration: 120, useNativeDriver: true }),
-      Animated.timing(flashAnim, { toValue: 0, duration: 280, useNativeDriver: true }),
+      Animated.timing(flashAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(flashAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
   }, [flash, flashAnim]);
 

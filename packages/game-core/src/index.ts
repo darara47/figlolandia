@@ -221,6 +221,17 @@ export const PROFESSION_DATA: Record<
 import { ResolutionDebug } from './resolution-debug';
 
 export { ResolutionDebug, isResolutionDebugEnabled } from './resolution-debug';
+export {
+  RESOLUTION_TURN_MS,
+  RESOLUTION_BUILD_AT,
+  RESOLUTION_PROFESSION_AT,
+  RESOLUTION_TURN_GAP_MS,
+  GOLD_FLOAT_MS,
+  goldFloatTotalMs,
+  getResolutionTurnDurationMs,
+  getResolutionAdvanceDelayMs,
+  UI_ANIMATION_MS,
+} from './animationTiming';
 export type { GoldLedgerEntry, ResolutionDebugEvent, ResolutionDebugPhase } from './resolution-debug';
 
 // Round Engine - główna logika rozstrzygania

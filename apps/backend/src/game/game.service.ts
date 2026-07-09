@@ -12,6 +12,7 @@ import {
   BUILDING_DATA,
   getAssignableProfessions,
   ResolutionDebug,
+  getResolutionAdvanceDelayMs,
 } from '@figlolandia/game-core';
 import { GameStateManager } from './game.state';
 import { SeededRNG } from '../utils/rng';
@@ -823,8 +824,7 @@ export class GameService {
     if (!instance) return 0;
     const playerCount = instance.state.players.length;
     const speed: AnimationSpeed = instance.state.config.animationSpeed ?? 'full';
-    const perPlayer = speed === 'full' ? 3500 : speed === 'fast' ? 1000 : 500;
-    return playerCount * perPlayer;
+    return getResolutionAdvanceDelayMs(playerCount, speed);
   }
 
   voteSkipResolution(

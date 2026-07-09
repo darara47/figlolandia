@@ -3,6 +3,7 @@ import { Animated, StyleSheet } from 'react-native';
 import { Text } from '@/src/components/ui/Text';
 import { colors, fonts } from '@/src/theme/tokens';
 import { formatGoldDelta } from '@/src/utils/goldDelta';
+import { GOLD_FLOAT_MS } from '@figlolandia/game-core';
 
 export interface GoldFloatItem {
   id: string;
@@ -15,41 +16,45 @@ interface GoldFloatLabelProps {
   onDone: (id: string) => void;
 }
 
-const HOLD_MS = 1600;
-const FADE_IN_MS = 150;
-const FADE_OUT_MS = 900;
-
 export const GoldFloatLabel = ({ item, onDone }: GoldFloatLabelProps) => {
-  const translateY = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const onDoneRef = useRef(onDone);
+  const startedForId = useRef<string | null>(null);
+
+  onDoneRef.current = onDone;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(opacity, { toValue: 1, duration: FADE_IN_MS, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: -2, duration: FADE_IN_MS, useNativeDriver: true }),
-      ]),
-      Animated.delay(HOLD_MS),
-      Animated.parallel([
-        Animated.timing(opacity, { toValue: 0, duration: FADE_OUT_MS, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: -18, duration: FADE_OUT_MS, useNativeDriver: true }),
-      ]),
-    ]).start(() => onDone(item.id));
-  }, [item.id, onDone, opacity, translateY]);
+    if (startedForId.current === item.id) return;
+    startedForId.current = item.id;
+    opacity.setValue(0);
+
+    const animation = Animated.sequence([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: GOLD_FLOAT_MS.fadeIn,
+        useNativeDriver: true,
+      }),
+      Animated.delay(GOLD_FLOAT_MS.hold),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: GOLD_FLOAT_MS.fadeOut,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    animation.start(({ finished }) => {
+      if (finished) {
+        onDoneRef.current(item.id);
+      }
+    });
+
+    return () => animation.stop();
+  }, [item.id, opacity]);
 
   const positive = item.amount > 0;
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.float,
-        {
-          opacity,
-          transform: [{ translateY }],
-        },
-      ]}
-    >
+    <Animated.View pointerEvents="none" style={[styles.float, { opacity }]}>
       <Text
         style={[
           styles.text,
@@ -64,11 +69,16 @@ export const GoldFloatLabel = ({ item, onDone }: GoldFloatLabelProps) => {
 
 const styles = StyleSheet.create({
   float: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
     justifyContent: 'center',
+    alignItems: 'flex-start',
   },
   text: {
     fontFamily: fonts.bodyBold,
-    fontSize: 17,
+    fontSize: 18,
     textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
