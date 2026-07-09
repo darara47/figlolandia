@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { WS_URL } from '@/constants/Config';
+import { getWsUrl } from '@/constants/Config';
 import {
   ClientEvents,
   ServerEvents,
@@ -59,7 +59,7 @@ export const useSocket = (options: UseSocketOptions = {}) => {
     isConnectingRef.current = true;
     setIsConnecting(true);
 
-    const socket = io(`${WS_URL}/game`, {
+    const socket = io(`${getWsUrl()}/game`, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 2000, // Zwiększ opóźnienie między próbami

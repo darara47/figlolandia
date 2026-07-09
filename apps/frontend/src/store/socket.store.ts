@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
-import { WS_URL } from '@/constants/Config';
+import { getWsUrl } from '@/constants/Config';
 import {
   ClientEvents,
   ServerEvents,
@@ -90,7 +90,7 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
         connectionAttempts: connectionAttempts + 1
       });
 
-      const newSocket = io(`${WS_URL}/game`, {
+      const newSocket = io(`${getWsUrl()}/game`, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionDelay: 2000, // Zwiększ opóźnienie między próbami

@@ -4,6 +4,8 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { SocketIOAdapter } from './websocket/socket-io.adapter';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import * as os from 'os';
 
 async function bootstrap() {
@@ -66,7 +68,13 @@ async function bootstrap() {
   logger.log(`🚀 Backend Figlolandia uruchomiony na porcie ${port}`);
   logger.log(`📡 WebSocket Gateway dostępny na ws://${localIp}:${port}/game`);
   logger.log(`📚 Swagger dokumentacja dostępna na http://${localIp}:${port}/api`);
-  logger.log(`🌐 Aplikacja dostępna z innych urządzeń w sieci: http://${localIp}:${port}`);
+
+  const frontendDistPath = join(__dirname, '..', '..', 'frontend', 'dist');
+  if (process.env.SERVE_WEB !== 'false' && existsSync(frontendDistPath)) {
+    logger.log(`🌍 Frontend (Expo web) dostępny na http://${localIp}:${port}`);
+  } else {
+    logger.log(`🌐 API dostępne z innych urządzeń w sieci: http://${localIp}:${port}`);
+  }
 }
 
 bootstrap();

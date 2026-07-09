@@ -1,3 +1,26 @@
 run ubuntu
 wsl -d Ubuntu
 
+# Produkcja (jeden port: API + Expo web z dist)
+pnpm prod
+# → build: game-core + backend dist + frontend dist (expo export --platform web)
+# → start: backend node dist/main serwuje też apps/frontend/dist
+
+# Tylko build
+pnpm build
+
+# Tylko start z dist (wymaga wcześniejszego build)
+pnpm start:prod
+
+# Dwa porty: backend :3008 + frontend :8081 (osobne serwery)
+pnpm prod:split
+
+# Dev
+pnpm dev          # front + back + game-core watch
+pnpm fe:web       # tylko expo web dev
+pnpm be           # tylko backend watch
+
+# Zmienne (opcjonalnie)
+# PORT=3008
+# SERVE_WEB=false   # wyłącz serwowanie frontu z backendu
+# EXPO_PUBLIC_BACKEND_URL=http://host:3008   # gdy front i back na różnych hostach

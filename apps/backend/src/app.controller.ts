@@ -7,7 +7,7 @@ import { AppService } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) { }
 
-  @Get()
+  @Get('status')
   @ApiOperation({ summary: 'Powitanie' })
   @ApiResponse({ status: 200, description: 'Zwraca powitanie' })
   getHello(): string {

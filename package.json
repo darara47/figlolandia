@@ -6,8 +6,12 @@
   "license": "ISC",
   "scripts": {
     "dev": "pnpm --parallel -r dev",
-    "build": "pnpm -r build",
+    "build": "pnpm -r --sort build",
+    "start:prod": "pnpm --filter ./apps/backend start:prod",
+    "prod": "pnpm build && pnpm start:prod",
+    "prod:split": "pnpm build && pnpm --parallel --filter ./apps/backend --filter ./apps/frontend start:prod",
     "fe": "pnpm --filter ./apps/frontend start",
+    "fe:web": "pnpm --filter ./apps/frontend web",
     "be": "pnpm --filter ./apps/backend start:dev"
   },
   "packageManager": "pnpm@11.10.0"

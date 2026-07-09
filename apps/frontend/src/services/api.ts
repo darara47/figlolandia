@@ -1,4 +1,4 @@
-import { BACKEND_URL } from '@/constants/Config';
+import { getBackendUrl } from '@/constants/Config';
 import {
   CreateGameResponseDto,
   JoinGameResponseDto,
@@ -16,7 +16,7 @@ export const api = {
    * Tworzy nową grę
    */
   async createGame(hostName: string): Promise<CreateGameResponseDto> {
-    const response = await fetch(`${BACKEND_URL}/games`, {
+    const response = await fetch(`${getBackendUrl()}/games`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -36,7 +36,7 @@ export const api = {
    * Dołącza do gry używając PIN-u
    */
   async joinGameByPin(playerName: string, gamePin: string): Promise<JoinGameResponseDto> {
-    const response = await fetch(`${BACKEND_URL}/games/join-by-pin`, {
+    const response = await fetch(`${getBackendUrl()}/games/join-by-pin`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -56,7 +56,7 @@ export const api = {
    * Pobiera stan gry
    */
   async getGameState(gameId: string): Promise<{ gameId: string; state: GameStateDto }> {
-    const response = await fetch(`${BACKEND_URL}/games/${gameId}`);
+    const response = await fetch(`${getBackendUrl()}/games/${gameId}`);
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Błąd serwera' }));
@@ -70,7 +70,7 @@ export const api = {
    * Rozpoczyna grę (tylko host)
    */
   async startGame(gameId: string, config?: GameConfigDto): Promise<StartGameResponseDto> {
-    const response = await fetch(`${BACKEND_URL}/games/${gameId}/start`, {
+    const response = await fetch(`${getBackendUrl()}/games/${gameId}/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
