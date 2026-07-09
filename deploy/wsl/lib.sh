@@ -9,6 +9,22 @@ CONFIG_DIR="${DEPLOY_DIR}/config"
 LOGS_DIR="${DEPLOY_DIR}/logs"
 ECOSYSTEM_FILE="${PROJECT_ROOT}/ecosystem.config.js"
 
+ensure_runtime_path() {
+  if [[ -n "${FIGLOLANDIA_RUNTIME_PATH_READY:-}" ]]; then
+    return
+  fi
+
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [[ -s "${NVM_DIR}/nvm.sh" ]]; then
+    # shellcheck disable=SC1091
+    . "${NVM_DIR}/nvm.sh"
+  fi
+
+  export FIGLOLANDIA_RUNTIME_PATH_READY=1
+}
+
+ensure_runtime_path
+
 load_deploy_config() {
   set -a
   # shellcheck disable=SC1091
