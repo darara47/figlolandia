@@ -17,7 +17,7 @@ git pull
 pnpm install
 pnpm build
 chmod +x deploy/wsl/*.sh
-pm2 restart figlolandia --update-env
+pm2 restart figlolandia --update-env || true
 
 echo ""
 "${SCRIPT_DIR}/status.sh"
