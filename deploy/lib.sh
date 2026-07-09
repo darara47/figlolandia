@@ -27,18 +27,23 @@ ensure_logs_dir() {
   mkdir -p "${LOGS_DIR}"
 }
 
-pm2_process_exists() {
+pm2_process_registered() {
   local process_name="$1"
-  pm2 pid "${process_name}" >/dev/null 2>&1
+  pm2 describe "${process_name}" >/dev/null 2>&1
+}
+
+# Backward-compatible alias used by stop/status scripts.
+pm2_process_exists() {
+  pm2_process_registered "$1"
 }
 
 start_pm2_process() {
   local process_name="$1"
 
-  if pm2_process_exists "${process_name}"; then
+  if pm2_process_registered "${process_name}"; then
     pm2 restart "${process_name}" --update-env
   else
-    pm2 start "${ECOSYSTEM_FILE}" --only "${process_name}" --update-env
+    pm2 start "${ECOSYSTEM_FILE}" --update-env
   fi
 }
 

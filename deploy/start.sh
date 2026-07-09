@@ -15,6 +15,7 @@ ensure_logs_dir
 cd "${PROJECT_ROOT}"
 
 echo "Starting Figlolandia staging..."
+
 start_pm2_process "figlolandia"
 start_pm2_process "cloudflared"
 
