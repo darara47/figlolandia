@@ -165,15 +165,14 @@ export default function LobbyScreen() {
   }, [gameId, setGameState, playerId, updateFromServer, router]);
 
   const handleStartGame = async () => {
-    if (!gameId) return;
+    if (!gameId || loading) return;
 
     setLoading(true);
     try {
       await api.startGame(gameId, config);
     } catch (error: any) {
-      Alert.alert('Błąd', error.message || 'Nie udało się rozpocząć gry');
-    } finally {
       setLoading(false);
+      Alert.alert('Błąd', error.message || 'Nie udało się rozpocząć gry');
     }
   };
 
@@ -307,7 +306,8 @@ export default function LobbyScreen() {
             variant="primary"
             size="lg"
             onPress={handleStartGame}
-            disabled={loading || !canStart}
+            disabled={!canStart}
+            loading={loading}
             style={styles.startButton}
           >
             {loading

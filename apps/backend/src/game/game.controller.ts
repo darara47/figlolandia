@@ -179,6 +179,7 @@ export class GameController {
         const planningState = this.gameService.enterPlanningPhase(gameId);
         this.gameGateway.emitGameStateUpdate(gameId, planningState);
         this.gameGateway.emitPhaseChange(gameId, planningState.phase, planningState.round);
+        this.gameGateway.schedulePlanningPhaseTimeout(gameId);
       }, 2000); // 2 sekundy na PREP
     }
 

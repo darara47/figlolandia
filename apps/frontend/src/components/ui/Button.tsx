@@ -1,4 +1,4 @@
-import { Pressable, PressableProps, StyleProp, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, PressableProps, StyleProp, View, ViewStyle } from 'react-native';
 import { cn } from '@/src/utils/cn';
 import { colors, radius } from '@/src/theme/tokens';
 import { Text } from './Text';
@@ -9,6 +9,7 @@ interface ButtonProps extends Omit<PressableProps, 'style'> {
   children: React.ReactNode;
   className?: string;
   style?: StyleProp<ViewStyle>;
+  loading?: boolean;
 }
 
 const variantStyles = {
@@ -43,35 +44,59 @@ export const Button = ({
   children,
   className,
   disabled,
+  loading = false,
   style,
   ...props
-}: ButtonProps) => (
-  <Pressable
-    className={cn(className)}
-    style={[
-      {
-        borderRadius: radius.pill,
-        alignItems: 'center',
-        justifyContent: 'center',
-        ...variantStyles[variant],
-        ...sizeStyles[size],
-        opacity: disabled ? 0.6 : 1,
-        backgroundColor: disabled ? colors.bg.hover : variantStyles[variant].backgroundColor,
-      },
-      style,
-    ]}
-    disabled={disabled}
-    {...props}
-  >
-    <Text
-      variant="body"
-      style={{
-        color: disabled ? colors.text.tertiary : textColors[variant],
-        fontFamily: 'PlusJakartaSans_700Bold',
-        fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
-      }}
+}: ButtonProps) => {
+  const isDisabled = disabled || loading;
+
+  return (
+    <Pressable
+      className={cn(className)}
+      style={[
+        {
+          borderRadius: radius.pill,
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...variantStyles[variant],
+          ...sizeStyles[size],
+          opacity: isDisabled ? 0.6 : 1,
+          backgroundColor: isDisabled ? colors.bg.hover : variantStyles[variant].backgroundColor,
+        },
+        style,
+      ]}
+      disabled={isDisabled}
+      {...props}
     >
-      {children}
-    </Text>
-  </Pressable>
-);
+      {loading ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <ActivityIndicator
+            size="small"
+            color={variant === 'secondary' ? colors.text.secondary : '#FFFFFF'}
+          />
+          <Text
+            variant="body"
+            style={{
+              color: colors.text.tertiary,
+              fontFamily: 'PlusJakartaSans_700Bold',
+              fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
+            }}
+          >
+            {children}
+          </Text>
+        </View>
+      ) : (
+        <Text
+          variant="body"
+          style={{
+            color: isDisabled ? colors.text.tertiary : textColors[variant],
+            fontFamily: 'PlusJakartaSans_700Bold',
+            fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
+          }}
+        >
+          {children}
+        </Text>
+      )}
+    </Pressable>
+  );
+};

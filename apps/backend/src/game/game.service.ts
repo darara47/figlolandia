@@ -30,7 +30,8 @@ type PlanningStep = {
 @Injectable()
 export class GameService {
   private readonly logger = new Logger(GameService.name);
-  private readonly PLANNING_TIMEOUT = 600000; // 10 minut (600000 ms)
+  static readonly PLANNING_PHASE_TIMEOUT_MS = 600000; // 10 minut
+  private readonly PLANNING_TIMEOUT = GameService.PLANNING_PHASE_TIMEOUT_MS;
   private planningTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
   // gameId -> playerId -> planning step
@@ -600,9 +601,29 @@ export class GameService {
   }
 
   /**
+   * Pozostały czas fazy PLANNING (ms), na podstawie autorytatywnego startu rundy.
+   */
+  getPlanningPhaseRemainingMs(gameId: string): number | null {
+    const instance = this.gameStateManager.getGame(gameId);
+    if (!instance || instance.state.phase !== 'PLANNING') {
+      return null;
+    }
+
+    const startTime = instance.state.planningPhaseStartTime;
+    if (!startTime) {
+      return this.PLANNING_TIMEOUT;
+    }
+
+    return Math.max(0, this.PLANNING_TIMEOUT - (Date.now() - startTime));
+  }
+
+  /**
    * Przechodzi do fazy RESOLUTION i rozstrzyga rundę
    */
-  enterResolutionPhase(gameId: string): GameState {
+  enterResolutionPhase(
+    gameId: string,
+    options?: { skipIncompletePlayers?: boolean },
+  ): GameState {
     const instance = this.gameStateManager.getGame(gameId);
     if (!instance) {
       throw new NotFoundException(`Gra ${gameId} nie istnieje`);
@@ -620,8 +641,27 @@ export class GameService {
     if (planningSteps) {
       const autoAbilityProfessions = new Set(['lucky', 'diplomat', 'urbanist']);
       state.pendingActions.clear();
+      ResolutionDebug.configure(state.gameId, state.round);
       for (const p of state.players) {
         const step = planningSteps.get(p.id);
+        const fullySubmitted =
+          !!step && step.buildConfirmed && step.abilityConfirmed;
+
+        if (options?.skipIncompletePlayers && !fullySubmitted) {
+          state.pendingActions.set(p.id, []);
+          ResolutionDebug.log(
+            'RESOLUTION',
+            'planning_input',
+            `${p.name}: pominięto — brak pełnego zatwierdzenia przed timeoutem`,
+            {
+              profession: p.profession,
+              buildConfirmed: step?.buildConfirmed ?? false,
+              abilityConfirmed: step?.abilityConfirmed ?? false,
+            },
+          );
+          continue;
+        }
+
         let abilityActions = step?.abilityActions || [];
         const autoInjected =
           step?.abilityConfirmed &&
@@ -634,7 +674,6 @@ export class GameService {
         const combined = [...(step?.buildActions || []), ...abilityActions];
         state.pendingActions.set(p.id, combined);
 
-        ResolutionDebug.configure(state.gameId, state.round);
         ResolutionDebug.log(
           'RESOLUTION',
           'planning_input',

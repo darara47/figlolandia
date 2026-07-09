@@ -645,7 +645,8 @@ export class RoundEngine {
     // Budowa budynków zaplanowanych na bieżącą rundę
     for (const player of players) {
       const playerActions = actions.get(player.id) || [];
-      const maxBuildings = player.profession === 'builder' ? 2 : 1;
+      const maxBuildings =
+        player.profession === 'builder' && !player.professionAbilityUsed ? 2 : 1;
       const buildActions = playerActions
         .filter((a) => a.type === 'build')
         .slice(0, maxBuildings);
@@ -714,9 +715,11 @@ export class RoundEngine {
         buildingData.valueRange[0];
       const buildProfession =
         buildAction.plannedProfession ?? player.profession;
+      const opportunityHunterDiscount =
+        buildProfession === 'opportunity_hunter' && !player.professionAbilityUsed;
       let cost = baseValue;
 
-      if (buildProfession === 'opportunity_hunter') {
+      if (opportunityHunterDiscount) {
         cost = Math.max(0, cost - 2);
       }
 
@@ -746,7 +749,8 @@ export class RoundEngine {
           buildingType: buildAction.buildingType,
           baseValue,
           cost,
-          opportunityHunter: buildProfession === 'opportunity_hunter',
+          opportunityHunter: opportunityHunterDiscount,
+          professionAbilityBlocked: player.professionAbilityUsed,
           plannedProfession: buildAction.plannedProfession,
         },
       );

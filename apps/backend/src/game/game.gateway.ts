@@ -84,54 +84,72 @@ export class GameGateway
   }
 
   /**
-   * Ustawia timeout dla fazy PLANNING (10 minut)
-   * Po timeout automatycznie przechodzi do RESOLUTION i następnej rundy
+   * Ustawia timeout dla fazy PLANNING.
+   * Używa planningPhaseStartTime, żeby timer był spójny z klientem i działał po restarcie/reconnect.
    */
-  private setPlanningPhaseTimeout(gameId: string): void {
-    // Usuń poprzedni timeout jeśli istnieje
+  public schedulePlanningPhaseTimeout(gameId: string): void {
     this.clearPlanningPhaseTimeout(gameId);
+
+    const remainingMs = this.gameService.getPlanningPhaseRemainingMs(gameId);
+    if (remainingMs === null) {
+      return;
+    }
+
+    if (remainingMs <= 0) {
+      this.handlePlanningPhaseTimeout(gameId);
+      return;
+    }
 
     const timeout = setTimeout(() => {
       this.planningPhaseTimeouts.delete(gameId);
-      this.logger.log(`Timeout fazy PLANNING dla gry ${gameId} - przechodzenie do RESOLUTION`);
-
-      try {
-        const instance = this.gameStateManager.getGame(gameId);
-        if (!instance || instance.state.phase !== 'PLANNING') {
-          // Gra już nie istnieje lub faza się zmieniła
-          return;
-        }
-
-        // Przejdź do RESOLUTION (rozstrzygnie rundę i przejdzie do PREP lub END)
-        const resolvedState = this.gameService.enterResolutionPhase(gameId);
-        this.emitGameStateUpdate(gameId, resolvedState);
-        this.emitPhaseChange(gameId, resolvedState.phase, resolvedState.round);
-
-        // Jeśli przeszło do PREP (nowa runda), automatycznie przejdź do PLANNING
-        if (resolvedState.phase === 'PREP') {
-          // Automatycznie przejdź do PLANNING po krótkim opóźnieniu
-          if (!this.gamePlanningTimeouts.has(gameId)) {
-            const prepTimeout = setTimeout(() => {
-              this.gamePlanningTimeouts.delete(gameId);
-              const currentInstance = this.gameStateManager.getGame(gameId);
-              if (currentInstance && currentInstance.state.phase === 'PREP') {
-                const planningState = this.gameService.enterPlanningPhase(gameId);
-                this.emitGameStateUpdate(gameId, planningState);
-                this.emitPhaseChange(gameId, planningState.phase, planningState.round);
-                // Ustaw timeout dla nowej fazy PLANNING
-                this.setPlanningPhaseTimeout(gameId);
-              }
-            }, 1000);
-            this.gamePlanningTimeouts.set(gameId, prepTimeout);
-          }
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Błąd timeout fazy PLANNING: ${errorMessage}`);
-      }
-    }, 600000); // 10 minut
+      this.handlePlanningPhaseTimeout(gameId);
+    }, remainingMs);
 
     this.planningPhaseTimeouts.set(gameId, timeout);
+  }
+
+  /**
+   * Po upływie czasu PLANNING: pomija niezatwierdzonych graczy i kończy rundę.
+   */
+  private handlePlanningPhaseTimeout(gameId: string): void {
+    this.logger.log(`Timeout fazy PLANNING dla gry ${gameId} - przechodzenie do RESOLUTION`);
+
+    try {
+      const instance = this.gameStateManager.getGame(gameId);
+      if (!instance || instance.state.phase !== 'PLANNING') {
+        return;
+      }
+
+      const resolvedState = this.gameService.enterResolutionPhase(gameId, {
+        skipIncompletePlayers: true,
+      });
+      this.emitGameStateUpdate(gameId, resolvedState);
+      this.emitPhaseChange(gameId, resolvedState.phase, resolvedState.round);
+
+      if (resolvedState.phase === 'PREP') {
+        if (!this.gamePlanningTimeouts.has(gameId)) {
+          const prepTimeout = setTimeout(() => {
+            this.gamePlanningTimeouts.delete(gameId);
+            const currentInstance = this.gameStateManager.getGame(gameId);
+            if (currentInstance && currentInstance.state.phase === 'PREP') {
+              const planningState = this.gameService.enterPlanningPhase(gameId);
+              this.emitGameStateUpdate(gameId, planningState);
+              this.emitPhaseChange(gameId, planningState.phase, planningState.round);
+              this.schedulePlanningPhaseTimeout(gameId);
+            }
+          }, 1000);
+          this.gamePlanningTimeouts.set(gameId, prepTimeout);
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Błąd timeout fazy PLANNING: ${errorMessage}`);
+    }
+  }
+
+  /** @deprecated use schedulePlanningPhaseTimeout */
+  private setPlanningPhaseTimeout(gameId: string): void {
+    this.schedulePlanningPhaseTimeout(gameId);
   }
 
   /**
@@ -263,6 +281,11 @@ export class GameGateway
 
       // Wyślij aktualny stan gry
       this.emitGameStateUpdate(gameId, gameState);
+
+      // Przy reconnect w trakcie PLANNING upewnij się, że timer rundy jest aktywny
+      if (gameState.phase === 'PLANNING') {
+        this.schedulePlanningPhaseTimeout(gameId);
+      }
 
       // Jeśli host i można rozpocząć, automatycznie rozpocznij
       if (
