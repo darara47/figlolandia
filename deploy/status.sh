@@ -20,8 +20,6 @@ if pm2_process_exists "figlolandia"; then
 else
   echo "Process not registered."
 fi
-<<<<<<< HEAD
-=======
 
 echo ""
 echo "=== cloudflared ==="
@@ -50,4 +48,3 @@ if pm2_process_exists "cloudflared"; then
 else
   echo "Process not registered."
 fi
->>>>>>> ce136dd (Add deployment configuration and scripts for Figlolandia staging environment)
