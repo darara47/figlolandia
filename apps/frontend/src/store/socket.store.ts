@@ -8,6 +8,7 @@ import {
   SubmitActionsPayload,
   ConfirmBuildPayload,
   ConfirmAbilityPayload,
+  VoteSkipResolutionPayload,
   GameStateUpdatePayload,
   PhaseChangePayload,
   ErrorPayload,
@@ -28,6 +29,7 @@ interface SocketStore {
   submitActions: (payload: SubmitActionsPayload) => void;
   confirmBuild: (payload: ConfirmBuildPayload) => void;
   confirmAbility: (payload: ConfirmAbilityPayload) => void;
+  voteSkipResolution: (payload: VoteSkipResolutionPayload) => void;
 
   // Event handlers (set from outside)
   onGameStateUpdate?: (payload: GameStateUpdatePayload) => void;
@@ -244,6 +246,17 @@ export const useSocketStore = create<SocketStore>((set, get) => ({
     }
     console.log('📤 CONFIRM_ABILITY:', payload);
     socket.emit(ClientEvents.CONFIRM_ABILITY, payload);
+  },
+
+  voteSkipResolution: (payload: VoteSkipResolutionPayload) => {
+    const { socket } = get();
+    if (!socket?.connected) {
+      console.error('Socket nie jest połączony');
+      set({ error: 'Socket nie jest połączony' });
+      return;
+    }
+    console.log('📤 VOTE_SKIP_RESOLUTION:', payload);
+    socket.emit(ClientEvents.VOTE_SKIP_RESOLUTION, payload);
   },
 
   setEventHandlers: (handlers) => {

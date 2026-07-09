@@ -29,6 +29,7 @@ export class LobbyService {
     eventFrequency: 0,
     minPlayers: 3,
     maxPlayers: 8,
+    animationSpeed: 'full',
   };
 
   constructor(private readonly gameStateManager: GameStateManager) { }

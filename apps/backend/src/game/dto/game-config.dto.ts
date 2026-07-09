@@ -4,8 +4,8 @@ import {
   IsOptional,
   Min,
   Max,
-  ValidateIf,
   IsInt,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -79,5 +79,15 @@ export class GameConfigDto {
   @Max(8)
   @Type(() => Number)
   maxPlayers?: number;
+
+  @ApiProperty({
+    description: 'Tempo animacji rozstrzygnięcia rundy',
+    example: 'full',
+    enum: ['full', 'fast', 'off'],
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(['full', 'fast', 'off'])
+  animationSpeed?: 'full' | 'fast' | 'off';
 }
 

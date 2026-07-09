@@ -30,6 +30,7 @@ export const useLobbyStore = create<LobbyStore>((set) => ({
     eventFrequency: 0,
     minPlayers: 3,
     maxPlayers: 8,
+    animationSpeed: 'full',
   },
 
   setGame: (gameId, gamePin, playerId, playerName, isHost) => {
@@ -74,6 +75,7 @@ export const useLobbyStore = create<LobbyStore>((set) => ({
         eventFrequency: 0,
         minPlayers: 3,
         maxPlayers: 8,
+        animationSpeed: 'full',
       },
     });
   },

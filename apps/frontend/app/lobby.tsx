@@ -97,6 +97,7 @@ export default function LobbyScreen() {
             eventFrequency: payload.config.eventFrequency,
             minPlayers: 3,
             maxPlayers: 8,
+            animationSpeed: payload.config.animationSpeed ?? 'full',
           },
         };
         setGameState(gameStateDto);
@@ -148,6 +149,7 @@ export default function LobbyScreen() {
                 maxRounds: response.state.config.maxRounds,
                 victoryThreshold: response.state.config.victoryThreshold,
                 eventFrequency: response.state.config.eventFrequency,
+                animationSpeed: response.state.config.animationSpeed ?? 'full',
               },
             };
             updateFromServer(gameStatePayload, playerId);
@@ -260,6 +262,37 @@ export default function LobbyScreen() {
                 />
               </View>
             ))}
+
+            <View style={styles.field}>
+              <Text variant="label" style={styles.fieldLabel}>
+                Tempo animacji rozstrzygnięcia
+              </Text>
+              <Row gap={8}>
+                {(
+                  [
+                    { id: 'full' as const, label: 'Pełne' },
+                    { id: 'fast' as const, label: 'Szybkie' },
+                    { id: 'off' as const, label: 'Wyłączone' },
+                  ] as const
+                ).map((option) => {
+                  const selected = (config.animationSpeed ?? 'full') === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => updateConfig({ animationSpeed: option.id })}
+                      style={[styles.segment, selected && styles.segmentSelected]}
+                    >
+                      <Text
+                        variant="label"
+                        style={{ color: selected ? colors.text.primary : colors.text.secondary }}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </Row>
+            </View>
           </Card>
         )}
 
@@ -385,6 +418,20 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     marginBottom: 8,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border.DEFAULT,
+    backgroundColor: colors.bg.elevated,
+  },
+  segmentSelected: {
+    borderColor: colors.brand.DEFAULT,
+    backgroundColor: colors.brand.muted,
   },
   playerRow: {
     flexDirection: 'row',

@@ -54,7 +54,8 @@ export const BuildingCard = ({
   const borderColor = selected ? colors.brand.DEFAULT : categoryColor;
   const borderWidth = selected ? 3 : 2;
 
-  const scaleAnim = useRef(new Animated.Value(animate ? 0 : 1)).current;
+  const scaleAnim = useRef(new Animated.Value(animate ? 0.2 : 1)).current;
+  const rotateAnim = useRef(new Animated.Value(animate ? 0 : 1)).current;
   const opacityAnim = useRef(new Animated.Value(animate ? 0 : 1)).current;
 
   useEffect(() => {
@@ -66,7 +67,12 @@ export const BuildingCard = ({
         Animated.spring(scaleAnim, {
           toValue: 1,
           tension: 50,
-          friction: 7,
+          friction: 6,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotateAnim, {
+          toValue: 1,
+          duration: 450,
           useNativeDriver: true,
         }),
         Animated.timing(opacityAnim, {
@@ -76,7 +82,12 @@ export const BuildingCard = ({
         }),
       ]),
     ]).start();
-  }, [animate, animationDelay, scaleAnim, opacityAnim]);
+  }, [animate, animationDelay, scaleAnim, rotateAnim, opacityAnim]);
+
+  const rotate = rotateAnim.interpolate({
+    inputRange: [0, 0.65, 1],
+    outputRange: ['-10deg', '5deg', '0deg'],
+  });
 
   const cardContent = (
     <Animated.View
@@ -85,8 +96,8 @@ export const BuildingCard = ({
         {
           width: dims.width,
           height: dims.height,
-          opacity: disabled && !selected ? 0.5 : 1,
-          transform: [{ scale: scaleAnim }],
+          opacity: disabled && !selected ? 0.5 : opacityAnim,
+          transform: [{ scale: scaleAnim }, { rotate }],
         },
         selected ? shadows.glow : shadows.card,
       ]}

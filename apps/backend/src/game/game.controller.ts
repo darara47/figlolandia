@@ -365,6 +365,7 @@ export class GameController {
         eventFrequency: state.config.eventFrequency,
         minPlayers: state.config.minPlayers,
         maxPlayers: state.config.maxPlayers,
+        animationSpeed: state.config.animationSpeed,
       },
       winner: state.winner,
     };

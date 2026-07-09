@@ -69,6 +69,9 @@ export class GameConfigResponseDto {
 
   @ApiProperty({ example: 8 })
   maxPlayers: number;
+
+  @ApiProperty({ example: 'full', enum: ['full', 'fast', 'off'] })
+  animationSpeed: 'full' | 'fast' | 'off';
 }
 
 export class GameStateDto {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, ScrollView, Pressable, Alert, StyleSheet } from 'react-native';
+import { View, ScrollView, Pressable, Alert, StyleSheet, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { ChevronsUpDown } from 'lucide-react-native';
 import { useGameStore } from '@/src/store/game.store';
 import { useSocketStore } from '@/src/store/socket.store';
 import { useLobbyStore } from '@/src/store/lobby.store';
@@ -13,6 +14,7 @@ import { ProfessionPanel } from '@/src/components/design-system/ProfessionPanel'
 import { PROFESSION_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { CardDto } from '@/src/types/api';
 import { colors, radius, spacing } from '@/src/theme/tokens';
+import { sortPlayersByJoinOrder } from '@/src/utils/players';
 
 const TAX_CATEGORIES: { id: string; label: string }[] = [
   { id: 'education', label: 'Edukacja' },
@@ -24,6 +26,10 @@ const TAX_CATEGORIES: { id: string; label: string }[] = [
 
 const PLANNING_TOTAL_MS = 600000;
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 export default function PlanningScreen() {
   const {
     gameId,
@@ -33,11 +39,12 @@ export default function PlanningScreen() {
     me,
     planningStatus,
     planningPhaseStartTime,
+    handExpanded,
+    toggleHandExpanded,
   } = useGameStore();
   const { playerId } = useLobbyStore();
   const { confirmBuild, confirmAbility } = useSocketStore();
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
-  const [handExpanded, setHandExpanded] = useState(false);
   const [selectedProfessionTargetId, setSelectedProfessionTargetId] = useState<string | null>(null);
   const [thiefTheftTarget, setThiefTheftTarget] = useState<'gold' | 'card'>('gold');
   const [selectedTaxCategory, setSelectedTaxCategory] = useState<string | null>(null);
@@ -66,6 +73,11 @@ export default function PlanningScreen() {
     setLocalBuildSubmitted(false);
     setLocalAbilitySubmitted(false);
   }, [round]);
+
+  const handleToggleHand = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    toggleHandExpanded();
+  };
 
   const professionData = me?.profession
     ? PROFESSION_DATA[me.profession as keyof typeof PROFESSION_DATA]
@@ -195,10 +207,7 @@ export default function PlanningScreen() {
     setLocalAbilitySubmitted(true);
   };
 
-  const sortedPlayers = [...players].sort(
-    (a, b) =>
-      (a.joinOrder ?? Number.MAX_SAFE_INTEGER) - (b.joinOrder ?? Number.MAX_SAFE_INTEGER),
-  );
+  const sortedPlayers = sortPlayersByJoinOrder(players);
   const targetPlayers = playerId ? sortedPlayers.filter((p) => p.id !== playerId) : [];
 
   const getCardCost = (card: CardDto): number => {
@@ -259,14 +268,16 @@ export default function PlanningScreen() {
 
         <View style={styles.handSection}>
           <Pressable
-            onPress={() => setHandExpanded(!handExpanded)}
+            onPress={handleToggleHand}
             style={[styles.handToggle, handExpanded && styles.handToggleExpanded]}
           >
             <View style={styles.handToggleRow}>
-              <Text variant="body" style={styles.handToggleTitle}>
+              <Text variant="section" style={styles.handToggleTitle}>
                 Moje karty ({me?.cards.length || 0})
               </Text>
-              <Text variant="label">{handExpanded ? '▼' : '▲'}</Text>
+              <View style={[styles.chevronButton, handExpanded && styles.chevronExpanded]}>
+                <ChevronsUpDown size={18} color={colors.text.secondary} />
+              </View>
             </View>
           </Pressable>
 
@@ -587,17 +598,20 @@ const styles = StyleSheet.create({
   handSection: {
     marginTop: spacing.cardGap,
     borderTopWidth: 1,
-    borderTopColor: colors.border.DEFAULT,
+    borderTopColor: colors.border.subtle,
     borderRadius: radius.card,
     backgroundColor: colors.bg.elevated,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 69, 0.12)',
   },
   handToggle: {
-    padding: 12,
+    padding: 14,
+    backgroundColor: 'rgba(61, 42, 34, 0.35)',
   },
   handToggleExpanded: {
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.DEFAULT,
+    borderBottomColor: colors.border.subtle,
   },
   handToggleRow: {
     flexDirection: 'row',
@@ -605,7 +619,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   handToggleTitle: {
-    fontFamily: 'PlusJakartaSans_700Bold',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  chevronButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg.hover,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+  },
+  chevronExpanded: {
+    transform: [{ rotate: '180deg' }],
   },
   handContent: {
     padding: spacing.screen,

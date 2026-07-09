@@ -17,6 +17,7 @@ import {
   SubmitActionsPayload,
   ConfirmBuildPayload,
   ConfirmAbilityPayload,
+  VoteSkipResolutionPayload,
   GameStateUpdatePayload,
   PhaseChangePayload,
   ErrorPayload,
@@ -49,6 +50,7 @@ export class GameGateway
   private gameStartTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout
   private gamePlanningTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout (PREP -> PLANNING)
   private planningPhaseTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout (PLANNING -> RESOLUTION)
+  private resolutionAdvanceTimeouts: Map<string, NodeJS.Timeout> = new Map(); // gameId -> timeout (RESOLUTION -> PREP/END)
 
   constructor(
     private readonly lobbyService: LobbyService,
@@ -124,23 +126,7 @@ export class GameGateway
         skipIncompletePlayers: true,
       });
       this.emitGameStateUpdate(gameId, resolvedState);
-      this.emitPhaseChange(gameId, resolvedState.phase, resolvedState.round);
-
-      if (resolvedState.phase === 'PREP') {
-        if (!this.gamePlanningTimeouts.has(gameId)) {
-          const prepTimeout = setTimeout(() => {
-            this.gamePlanningTimeouts.delete(gameId);
-            const currentInstance = this.gameStateManager.getGame(gameId);
-            if (currentInstance && currentInstance.state.phase === 'PREP') {
-              const planningState = this.gameService.enterPlanningPhase(gameId);
-              this.emitGameStateUpdate(gameId, planningState);
-              this.emitPhaseChange(gameId, planningState.phase, planningState.round);
-              this.schedulePlanningPhaseTimeout(gameId);
-            }
-          }, 1000);
-          this.gamePlanningTimeouts.set(gameId, prepTimeout);
-        }
-      }
+      this.handleResolutionEntered(gameId, resolvedState);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.logger.error(`Błąd timeout fazy PLANNING: ${errorMessage}`);
@@ -163,6 +149,79 @@ export class GameGateway
     }
   }
 
+  private clearResolutionAdvanceTimeout(gameId: string): void {
+    const timeout = this.resolutionAdvanceTimeouts.get(gameId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.resolutionAdvanceTimeouts.delete(gameId);
+    }
+  }
+
+  private handleResolutionEntered(gameId: string, state: { phase: string; round: number }): void {
+    if (state.phase !== 'RESOLUTION') {
+      return;
+    }
+
+    this.emitPhaseChange(gameId, 'RESOLUTION', state.round);
+    this.scheduleResolutionAdvanceTimeout(gameId);
+  }
+
+  private scheduleResolutionAdvanceTimeout(gameId: string): void {
+    this.clearResolutionAdvanceTimeout(gameId);
+
+    const delayMs = this.gameService.getResolutionAdvanceDelayMs(gameId);
+    const timeout = setTimeout(() => {
+      this.resolutionAdvanceTimeouts.delete(gameId);
+      this.advanceResolutionAndEmit(gameId);
+    }, delayMs);
+
+    this.resolutionAdvanceTimeouts.set(gameId, timeout);
+  }
+
+  private advanceResolutionAndEmit(gameId: string): void {
+    try {
+      const instance = this.gameStateManager.getGame(gameId);
+      if (!instance || instance.state.phase !== 'RESOLUTION') {
+        return;
+      }
+
+      const finalState = this.gameService.advanceFromResolution(gameId);
+      this.emitGameStateUpdate(gameId, finalState);
+      this.handleAfterResolutionAdvance(gameId, finalState);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Błąd advanceFromResolution: ${errorMessage}`);
+    }
+  }
+
+  private handleAfterResolutionAdvance(
+    gameId: string,
+    gameState: { phase: string; round: number },
+  ): void {
+    this.clearResolutionAdvanceTimeout(gameId);
+    this.gameService.clearResolutionSession(gameId);
+
+    if (gameState.phase === 'PREP' || gameState.phase === 'END') {
+      this.emitPhaseChange(gameId, gameState.phase, gameState.round);
+
+      if (gameState.phase === 'PREP') {
+        if (!this.gamePlanningTimeouts.has(gameId)) {
+          const timeout = setTimeout(() => {
+            this.gamePlanningTimeouts.delete(gameId);
+            const currentInstance = this.gameStateManager.getGame(gameId);
+            if (currentInstance && currentInstance.state.phase === 'PREP') {
+              const updatedState = this.gameService.enterPlanningPhase(gameId);
+              this.emitGameStateUpdate(gameId, updatedState);
+              this.emitPhaseChange(gameId, updatedState.phase, updatedState.round);
+              this.schedulePlanningPhaseTimeout(gameId);
+            }
+          }, 1000);
+          this.gamePlanningTimeouts.set(gameId, timeout);
+        }
+      }
+    }
+  }
+
   /**
    * Czyści timeouty dla gry (przy usuwaniu gry)
    */
@@ -180,6 +239,26 @@ export class GameGateway
     }
 
     this.clearPlanningPhaseTimeout(gameId);
+    this.clearResolutionAdvanceTimeout(gameId);
+    this.gameService.clearResolutionSession(gameId);
+  }
+
+  private handleGameStatePhaseTransition(
+    gameId: string,
+    gameState: { phase: string; round: number },
+  ): void {
+    if (gameState.phase === 'RESOLUTION' || gameState.phase === 'PREP' || gameState.phase === 'END') {
+      this.clearPlanningPhaseTimeout(gameId);
+    }
+
+    if (gameState.phase === 'RESOLUTION') {
+      this.handleResolutionEntered(gameId, gameState);
+      return;
+    }
+
+    if (gameState.phase === 'PREP' || gameState.phase === 'END') {
+      this.handleAfterResolutionAdvance(gameId, gameState);
+    }
   }
 
   /**
@@ -368,46 +447,8 @@ export class GameGateway
         actions,
       );
 
-      // Wyślij zaktualizowany stan
       this.emitGameStateUpdate(payload.gameId, gameState);
-
-      // Jeśli automatycznie przeszło do RESOLUTION (wszyscy zatwierdzili), wyczyść timeout
-      if (gameState.phase === 'RESOLUTION' || gameState.phase === 'PREP' || gameState.phase === 'END') {
-        this.clearPlanningPhaseTimeout(payload.gameId);
-      }
-
-      // Jeśli automatycznie przeszło do RESOLUTION (które od razu przechodzi do PREP/END)
-      if (gameState.phase === 'PREP' || gameState.phase === 'END') {
-        this.emitPhaseChange(payload.gameId, gameState.phase, gameState.round);
-
-        // Jeśli przeszło do PREP (nowa runda), automatycznie przejdź do PLANNING
-        if (gameState.phase === 'PREP') {
-          // Automatycznie przejdź do PLANNING po krótkim opóźnieniu
-          // Sprawdź czy timeout już nie został ustawiony
-          if (!this.gamePlanningTimeouts.has(payload.gameId)) {
-            const timeout = setTimeout(() => {
-              this.gamePlanningTimeouts.delete(payload.gameId);
-              // Sprawdź czy gra nadal istnieje i jest w fazie PREP
-              const currentInstance = this.gameStateManager.getGame(payload.gameId);
-              if (currentInstance && currentInstance.state.phase === 'PREP') {
-                const updatedState = this.gameService.enterPlanningPhase(
-                  payload.gameId,
-                );
-                this.emitGameStateUpdate(payload.gameId, updatedState);
-                this.emitPhaseChange(
-                  payload.gameId,
-                  updatedState.phase,
-                  updatedState.round,
-                );
-                // Ustaw timeout dla fazy PLANNING (10 minut)
-                this.setPlanningPhaseTimeout(payload.gameId);
-              }
-            }, 1000);
-            this.gamePlanningTimeouts.set(payload.gameId, timeout);
-          }
-        }
-        // Jeśli END - gra się zakończyła, nie robimy nic więcej
-      }
+      this.handleGameStatePhaseTransition(payload.gameId, gameState);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
@@ -465,30 +506,7 @@ export class GameGateway
       );
 
       this.emitGameStateUpdate(payload.gameId, gameState);
-
-      if (gameState.phase === 'RESOLUTION' || gameState.phase === 'PREP' || gameState.phase === 'END') {
-        this.clearPlanningPhaseTimeout(payload.gameId);
-      }
-
-      if (gameState.phase === 'PREP' || gameState.phase === 'END') {
-        this.emitPhaseChange(payload.gameId, gameState.phase, gameState.round);
-
-        if (gameState.phase === 'PREP') {
-          if (!this.gamePlanningTimeouts.has(payload.gameId)) {
-            const timeout = setTimeout(() => {
-              this.gamePlanningTimeouts.delete(payload.gameId);
-              const currentInstance = this.gameStateManager.getGame(payload.gameId);
-              if (currentInstance && currentInstance.state.phase === 'PREP') {
-                const updatedState = this.gameService.enterPlanningPhase(payload.gameId);
-                this.emitGameStateUpdate(payload.gameId, updatedState);
-                this.emitPhaseChange(payload.gameId, updatedState.phase, updatedState.round);
-                this.setPlanningPhaseTimeout(payload.gameId);
-              }
-            }, 1000);
-            this.gamePlanningTimeouts.set(payload.gameId, timeout);
-          }
-        }
-      }
+      this.handleGameStatePhaseTransition(payload.gameId, gameState);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
@@ -560,34 +578,40 @@ export class GameGateway
       );
 
       this.emitGameStateUpdate(payload.gameId, gameState);
-
-      if (gameState.phase === 'RESOLUTION' || gameState.phase === 'PREP' || gameState.phase === 'END') {
-        this.clearPlanningPhaseTimeout(payload.gameId);
-      }
-
-      if (gameState.phase === 'PREP' || gameState.phase === 'END') {
-        this.emitPhaseChange(payload.gameId, gameState.phase, gameState.round);
-
-        if (gameState.phase === 'PREP') {
-          if (!this.gamePlanningTimeouts.has(payload.gameId)) {
-            const timeout = setTimeout(() => {
-              this.gamePlanningTimeouts.delete(payload.gameId);
-              const currentInstance = this.gameStateManager.getGame(payload.gameId);
-              if (currentInstance && currentInstance.state.phase === 'PREP') {
-                const updatedState = this.gameService.enterPlanningPhase(payload.gameId);
-                this.emitGameStateUpdate(payload.gameId, updatedState);
-                this.emitPhaseChange(payload.gameId, updatedState.phase, updatedState.round);
-                this.setPlanningPhaseTimeout(payload.gameId);
-              }
-            }, 1000);
-            this.gamePlanningTimeouts.set(payload.gameId, timeout);
-          }
-        }
-      }
+      this.handleGameStatePhaseTransition(payload.gameId, gameState);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       this.logger.error(`Błąd CONFIRM_ABILITY: ${errorMessage}`, errorStack);
+      this.emitError(client, errorMessage);
+    }
+  }
+
+  @SubscribeMessage(ClientEvents.VOTE_SKIP_RESOLUTION)
+  handleVoteSkipResolution(
+    @MessageBody() payload: VoteSkipResolutionPayload,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const playerId = this.clientToPlayer.get(client.id);
+      if (!playerId) {
+        throw new Error('Gracz nie jest zidentyfikowany');
+      }
+
+      const { allVoted, state } = this.gameService.voteSkipResolution(
+        payload.gameId,
+        playerId,
+      );
+
+      this.emitGameStateUpdate(payload.gameId, state);
+
+      if (allVoted) {
+        this.clearResolutionAdvanceTimeout(payload.gameId);
+        this.handleAfterResolutionAdvance(payload.gameId, state);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Błąd VOTE_SKIP_RESOLUTION: ${errorMessage}`);
       this.emitError(client, errorMessage);
     }
   }
@@ -688,6 +712,7 @@ export class GameGateway
         maxRounds: state.config.maxRounds,
         victoryThreshold: state.config.victoryThreshold,
         eventFrequency: state.config.eventFrequency,
+        animationSpeed: state.config.animationSpeed ?? 'full',
       },
       submittedPlayers, // Lista ID graczy, którzy zatwierdzili swoje ruchy
       planningStatus,
@@ -695,6 +720,14 @@ export class GameGateway
         ? state.planningPhaseStartTime
         : undefined, // Timestamp rozpoczęcia fazy PLANNING (ze stanu gry)
       narrativeEvents: (state as any).narrativeEvents || [], // Wydarzenia narratora
+      skipResolutionVotes:
+        state.phase === 'RESOLUTION'
+          ? this.gameService.getSkipResolutionVotes(gameId)
+          : undefined,
+      resolutionSkipped:
+        state.phase === 'RESOLUTION'
+          ? this.gameService.wasResolutionSkipped(gameId)
+          : undefined,
     };
 
     // Jeśli jesteśmy w fazie PLANNING, wyślij spersonalizowane payloady

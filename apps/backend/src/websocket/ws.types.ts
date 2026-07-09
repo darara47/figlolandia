@@ -62,6 +62,10 @@ export interface ConfirmAbilityPayload {
   };
 }
 
+export interface VoteSkipResolutionPayload {
+  gameId: string;
+}
+
 // Server → Client
 export interface GameStateUpdatePayload {
   gameId: string;
@@ -93,11 +97,14 @@ export interface GameStateUpdatePayload {
     maxRounds: number;
     victoryThreshold: number;
     eventFrequency: number;
+    animationSpeed: 'full' | 'fast' | 'off';
   };
   submittedPlayers?: string[]; // Lista ID graczy, którzy zatwierdzili swoje ruchy (tylko w fazie PLANNING)
   planningStatus?: Record<string, { buildConfirmed: boolean; abilityConfirmed: boolean }>;
   planningPhaseStartTime?: number; // Timestamp rozpoczęcia fazy PLANNING (w milisekundach)
   narrativeEvents?: NarrativeEvent[]; // Wydarzenia narratora
+  skipResolutionVotes?: string[]; // Gracze którzy głosowali za pominięciem animacji (faza RESOLUTION)
+  resolutionSkipped?: boolean; // true gdy wszyscy głosowali za pominięciem
 }
 
 // Wydarzenia narratora - klucze które frontend tłumaczy na tekst
@@ -127,6 +134,7 @@ export enum ClientEvents {
   SUBMIT_ACTIONS = 'SUBMIT_ACTIONS',
   CONFIRM_BUILD = 'CONFIRM_BUILD',
   CONFIRM_ABILITY = 'CONFIRM_ABILITY',
+  VOTE_SKIP_RESOLUTION = 'VOTE_SKIP_RESOLUTION',
 }
 
 export enum ServerEvents {

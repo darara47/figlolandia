@@ -32,12 +32,14 @@ export interface Card {
     buildingCategory: BuildingCategory;
     buildingValue: number;
 }
+export type AnimationSpeed = 'full' | 'fast' | 'off';
 export interface GameConfig {
     maxRounds: number;
     victoryThreshold: number;
     eventFrequency: number;
     minPlayers: number;
     maxPlayers: number;
+    animationSpeed: AnimationSpeed;
 }
 export interface GameState {
     gameId: string;

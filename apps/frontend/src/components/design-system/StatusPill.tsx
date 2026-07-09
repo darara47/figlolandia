@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Text } from '@/src/components/ui/Text';
 import { colors, radius } from '@/src/theme/tokens';
+import { cn } from '@/src/utils/cn';
 
 interface StatusPillProps {
   label: string;
@@ -8,8 +9,9 @@ interface StatusPillProps {
   className?: string;
 }
 
-export const StatusPill = ({ label, confirmed }: StatusPillProps) => (
+export const StatusPill = ({ label, confirmed, className }: StatusPillProps) => (
   <View
+    className={cn(className)}
     style={{
       borderRadius: radius.pill,
       paddingHorizontal: 8,

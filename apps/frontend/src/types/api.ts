@@ -34,6 +34,7 @@ export interface GameConfigDto {
   eventFrequency?: number;
   minPlayers?: number;
   maxPlayers?: number;
+  animationSpeed?: 'full' | 'fast' | 'off';
 }
 
 export interface GameConfigResponseDto {
@@ -42,6 +43,7 @@ export interface GameConfigResponseDto {
   eventFrequency: number;
   minPlayers: number;
   maxPlayers: number;
+  animationSpeed: 'full' | 'fast' | 'off';
 }
 
 export interface GameStateDto {

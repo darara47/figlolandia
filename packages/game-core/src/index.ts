@@ -105,6 +105,9 @@ export interface Card {
   buildingValue: number; // wartość budynku (1-5) - zawsze wymagana
 }
 
+// Animation speed for resolution reveal
+export type AnimationSpeed = 'full' | 'fast' | 'off';
+
 // Game Configuration
 export interface GameConfig {
   maxRounds: number;
@@ -112,6 +115,7 @@ export interface GameConfig {
   eventFrequency: number; // 0-100, częstotliwość zdarzeń w procentach
   minPlayers: number;
   maxPlayers: number;
+  animationSpeed: AnimationSpeed;
 }
 
 // Game State

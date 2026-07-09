@@ -11,7 +11,8 @@ import SummaryScreen from './summary';
 
 export default function GameScreen() {
   const { gameId } = useLocalSearchParams<{ gameId: string }>();
-  const { phase, updateFromServer, narrativeLog } = useGameStore();
+  const { phase, updateFromServer, narrativeLog, narrativeEvents, config, resolutionNarratorEvent } =
+    useGameStore();
   const { playerId } = useLobbyStore();
   const { setEventHandlers } = useSocketStore();
 
@@ -40,9 +41,18 @@ export default function GameScreen() {
     }
   };
 
+  const narratorEvents =
+    phase === 'RESOLUTION'
+      ? resolutionNarratorEvent
+        ? [resolutionNarratorEvent]
+        : config.animationSpeed === 'off'
+          ? narrativeEvents
+          : []
+      : narrativeLog;
+
   return (
     <View className="flex-1 bg-bg-base">
-      <NarratorPanel events={narrativeLog} />
+      <NarratorPanel events={narratorEvents} />
       <View className="min-h-0 flex-1">
         {renderScreen()}
       </View>

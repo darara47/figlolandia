@@ -29,14 +29,24 @@ interface GameStore {
   winner: string | null;
   narrativeLog: NarrativeEvent[]; // Pełna historia logów narratora
   narrativeEvents: NarrativeEvent[]; // Ostatnia paczka z serwera (animacje)
+  skipResolutionVotes: string[];
+  localSkipVoted: boolean;
   config: {
     maxRounds: number;
     victoryThreshold: number;
     eventFrequency: number;
+    animationSpeed: 'full' | 'fast' | 'off';
   };
+
+  resolutionNarratorEvent: NarrativeEvent | null;
+  handExpanded: boolean;
 
   // Actions
   updateFromServer: (payload: GameStateUpdatePayload, playerId: string) => void;
+  setLocalSkipVoted: (voted: boolean) => void;
+  setResolutionNarratorEvent: (event: NarrativeEvent | null) => void;
+  setHandExpanded: (expanded: boolean) => void;
+  toggleHandExpanded: () => void;
   addAction: (action: PlayerAction) => void;
   removeAction: (index: number) => void;
   clearActions: () => void;
@@ -56,10 +66,15 @@ export const useGameStore = create<GameStore>((set) => ({
   winner: null,
   narrativeLog: [],
   narrativeEvents: [],
+  skipResolutionVotes: [],
+  localSkipVoted: false,
+  resolutionNarratorEvent: null,
+  handExpanded: false,
   config: {
     maxRounds: 10,
     victoryThreshold: 50,
     eventFrequency: 0,
+    animationSpeed: 'full',
   },
 
   updateFromServer: (payload, playerId) => {
@@ -85,12 +100,35 @@ export const useGameStore = create<GameStore>((set) => ({
         payload.narrativeEvents && payload.narrativeEvents.length > 0
           ? payload.narrativeEvents
           : state.narrativeEvents,
+      skipResolutionVotes:
+        payload.phase === 'RESOLUTION' ? (payload.skipResolutionVotes ?? []) : [],
+      localSkipVoted:
+        payload.phase === 'PLANNING' ? false : state.localSkipVoted,
+      resolutionNarratorEvent:
+        payload.phase === 'PLANNING' ? null : state.resolutionNarratorEvent,
       config: {
         maxRounds: payload.config.maxRounds,
         victoryThreshold: payload.config.victoryThreshold,
         eventFrequency: payload.config.eventFrequency,
+        animationSpeed: payload.config.animationSpeed ?? 'full',
       },
     }));
+  },
+
+  setLocalSkipVoted: (voted) => {
+    set({ localSkipVoted: voted });
+  },
+
+  setResolutionNarratorEvent: (event) => {
+    set({ resolutionNarratorEvent: event });
+  },
+
+  setHandExpanded: (expanded) => {
+    set({ handExpanded: expanded });
+  },
+
+  toggleHandExpanded: () => {
+    set((state) => ({ handExpanded: !state.handExpanded }));
   },
 
   addAction: (action) => {
@@ -123,10 +161,15 @@ export const useGameStore = create<GameStore>((set) => ({
       winner: null,
       narrativeLog: [],
       narrativeEvents: [],
+      skipResolutionVotes: [],
+      localSkipVoted: false,
+      resolutionNarratorEvent: null,
+      handExpanded: false,
       config: {
         maxRounds: 10,
         victoryThreshold: 50,
         eventFrequency: 0,
+        animationSpeed: 'full',
       },
     });
   },

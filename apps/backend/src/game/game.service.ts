@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, Logger } from '@nes
 import {
   GameState,
   GameConfig,
+  AnimationSpeed,
   Player,
   PlayerAction,
   RoundEngine,
@@ -15,12 +16,18 @@ import {
 import { GameStateManager } from './game.state';
 import { SeededRNG } from '../utils/rng';
 import { NarrativeService } from './narrative.service';
+import { NarrativeEvent } from '../websocket/ws.types';
 
 type PlanningStep = {
   buildConfirmed: boolean;
   abilityConfirmed: boolean;
   buildActions: PlayerAction[];
   abilityActions: PlayerAction[];
+};
+
+type ResolutionPending = {
+  resolvedState: GameState;
+  narrativeEvents: NarrativeEvent[];
 };
 
 /**
@@ -36,11 +43,38 @@ export class GameService {
 
   // gameId -> playerId -> planning step
   private planningStepsByGame: Map<string, Map<string, PlanningStep>> = new Map();
+  private resolutionPendingByGame: Map<string, ResolutionPending> = new Map();
+  private skipResolutionVotesByGame: Map<string, Set<string>> = new Map();
+  private resolutionSkippedByGame: Map<string, boolean> = new Map();
 
   constructor(
     private readonly gameStateManager: GameStateManager,
     private readonly narrativeService: NarrativeService,
   ) { }
+
+  /** JSON clone traci Map — przywraca pendingActions i spiedHands przed użyciem stanu gry. */
+  private hydrateGameState(raw: GameState): GameState {
+    const state = raw;
+
+    if (!(state.pendingActions instanceof Map)) {
+      const entries = Object.entries(
+        (state.pendingActions as unknown as Record<string, PlayerAction[]>) ?? {},
+      );
+      state.pendingActions = new Map(entries);
+    }
+
+    if (state.spiedHands && !(state.spiedHands instanceof Map)) {
+      state.spiedHands = new Map(
+        Object.entries(state.spiedHands as unknown as Record<string, Card[]>),
+      );
+    }
+
+    return state;
+  }
+
+  private cloneGameState(state: GameState): GameState {
+    return this.hydrateGameState(JSON.parse(JSON.stringify(state)) as GameState);
+  }
 
   /**
    * Rozpoczyna grę (przechodzi z LOBBY do PREP) z konfiguracją
@@ -82,6 +116,13 @@ export class GameService {
       if (state.config.eventFrequency < 0 || state.config.eventFrequency > 100) {
         throw new BadRequestException(
           'Częstotliwość zdarzeń musi być między 0 a 100'
+        );
+      }
+
+      const validSpeeds = ['full', 'fast', 'off'] as const;
+      if (!validSpeeds.includes(state.config.animationSpeed)) {
+        throw new BadRequestException(
+          'Tempo animacji musi być: full, fast lub off'
         );
       }
     }
@@ -735,28 +776,122 @@ export class GameService {
     }
 
     // Generuj wydarzenia narratora
+    const pendingActionsSnapshot = new Map(state.pendingActions);
     const narrativeEvents = this.narrativeService.generateNarrativeEvents(
       beforeState,
       resolvedState,
-      state.pendingActions
+      pendingActionsSnapshot,
     );
-    (resolvedState as any).narrativeEvents = narrativeEvents;
 
-    // Sprawdź warunki zwycięstwa
     const winner = RoundEngine.checkVictory(resolvedState);
+    const pendingResolved = this.cloneGameState(resolvedState);
     if (winner) {
-      resolvedState.winner = winner;
-      resolvedState.phase = 'END';
+      pendingResolved.winner = winner;
+      pendingResolved.phase = 'END';
     } else {
-      // Przejdź do następnej rundy
-      resolvedState.round++;
-      resolvedState.phase = 'PREP';
-      this.prepareRound(resolvedState);
+      pendingResolved.round += 1;
+      pendingResolved.phase = 'PREP';
     }
 
-    this.gameStateManager.updateGameState(gameId, resolvedState);
+    this.resolutionPendingByGame.set(gameId, {
+      resolvedState: pendingResolved,
+      narrativeEvents,
+    });
+    this.skipResolutionVotesByGame.set(gameId, new Set());
+    this.resolutionSkippedByGame.delete(gameId);
+
+    const displayState = this.cloneGameState(beforeState);
+    displayState.phase = 'RESOLUTION';
+    (displayState as GameState & { narrativeEvents?: NarrativeEvent[] }).narrativeEvents =
+      narrativeEvents;
+
+    this.gameStateManager.updateGameState(gameId, displayState);
     this.planningStepsByGame.delete(gameId);
-    return resolvedState;
+    return displayState;
+  }
+
+  getSkipResolutionVotes(gameId: string): string[] {
+    return [...(this.skipResolutionVotesByGame.get(gameId) ?? [])];
+  }
+
+  wasResolutionSkipped(gameId: string): boolean {
+    return this.resolutionSkippedByGame.get(gameId) ?? false;
+  }
+
+  getResolutionAdvanceDelayMs(gameId: string): number {
+    const instance = this.gameStateManager.getGame(gameId);
+    if (!instance) return 0;
+    const playerCount = instance.state.players.length;
+    const speed: AnimationSpeed = instance.state.config.animationSpeed ?? 'full';
+    const perPlayer = speed === 'full' ? 3500 : speed === 'fast' ? 1000 : 500;
+    return playerCount * perPlayer;
+  }
+
+  voteSkipResolution(
+    gameId: string,
+    playerId: string,
+  ): { allVoted: boolean; state: GameState } {
+    const instance = this.gameStateManager.getGame(gameId);
+    if (!instance) {
+      throw new NotFoundException(`Gra ${gameId} nie istnieje`);
+    }
+    if (instance.state.phase !== 'RESOLUTION') {
+      throw new BadRequestException('Głosowanie możliwe tylko w fazie RESOLUTION');
+    }
+
+    const votes = this.skipResolutionVotesByGame.get(gameId) ?? new Set<string>();
+    votes.add(playerId);
+    this.skipResolutionVotesByGame.set(gameId, votes);
+
+    const allVoted = votes.size >= instance.state.players.length;
+    if (allVoted) {
+      const state = this.advanceFromResolution(gameId, { resolutionSkipped: true });
+      return { allVoted: true, state };
+    }
+
+    return { allVoted: false, state: instance.state };
+  }
+
+  advanceFromResolution(
+    gameId: string,
+    options?: { resolutionSkipped?: boolean },
+  ): GameState {
+    const instance = this.gameStateManager.getGame(gameId);
+    if (!instance) {
+      throw new NotFoundException(`Gra ${gameId} nie istnieje`);
+    }
+    if (instance.state.phase !== 'RESOLUTION') {
+      throw new BadRequestException('Gra nie jest w fazie RESOLUTION');
+    }
+
+    const pending = this.resolutionPendingByGame.get(gameId);
+    if (!pending) {
+      throw new BadRequestException('Brak oczekującego rozstrzygnięcia');
+    }
+
+    if (options?.resolutionSkipped) {
+      this.resolutionSkippedByGame.set(gameId, true);
+    }
+
+    const finalState = this.cloneGameState(pending.resolvedState);
+    (finalState as GameState & { narrativeEvents?: NarrativeEvent[] }).narrativeEvents =
+      pending.narrativeEvents;
+
+    if (finalState.phase === 'PREP') {
+      this.prepareRound(finalState);
+    }
+
+    this.gameStateManager.updateGameState(gameId, finalState);
+    this.resolutionPendingByGame.delete(gameId);
+    this.skipResolutionVotesByGame.delete(gameId);
+
+    return finalState;
+  }
+
+  clearResolutionSession(gameId: string): void {
+    this.resolutionPendingByGame.delete(gameId);
+    this.skipResolutionVotesByGame.delete(gameId);
+    this.resolutionSkippedByGame.delete(gameId);
   }
 
   /**
