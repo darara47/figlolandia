@@ -1,1 +1,10 @@
 node_modules
+
+# Staging / deploy secrets & runtime
+deploy/config.local.env
+deploy/logs/
+deploy/.cloudflared/
+
+# Cloudflare / keys (defense in depth)
+*.pem
+.cloudflared/
