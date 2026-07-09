@@ -8,9 +8,35 @@ Ręczne zarządzanie lokalnym środowiskiem stagingowym. Brak auto-deployu, brak
 - Node.js + [pnpm](https://pnpm.io/)
 - [PM2](https://pm2.keymetrics.io/) (`npm i -g pm2`)
 - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) w PATH
-- Repo w WSL, np. `~/apps/figlolandia`
+- Repo w WSL pod `~/apps/figlolandia`
 
-## Pierwsze uruchomienie
+## Struktura `deploy/`
+
+```
+deploy/
+├── README.md
+├── config/
+│   ├── config.env                 # port, host, domena (bez sekretów)
+│   └── config.local.env.example   # szablon sekretów
+├── wsl/
+│   ├── lib.sh                     # wspólne funkcje bash
+│   ├── start.sh
+│   ├── stop.sh
+│   ├── restart.sh
+│   ├── status.sh
+│   └── update.sh
+├── windows/
+│   ├── start.ps1
+│   ├── stop.ps1
+│   ├── restart.ps1
+│   ├── status.ps1
+│   └── update.ps1
+└── logs/                          # gitignored
+```
+
+Root repo: `ecosystem.config.js` — konfiguracja PM2.
+
+## Pierwsze uruchomienie (WSL)
 
 ```bash
 cd ~/apps/figlolandia
@@ -18,15 +44,15 @@ cd ~/apps/figlolandia
 pnpm install
 pnpm build
 
-chmod +x deploy/*.sh
+chmod +x deploy/wsl/*.sh
 
 # opcjonalnie — sekrety (token Cloudflare)
-cp deploy/config.local.env.example deploy/config.local.env
+cp deploy/config/config.local.env.example deploy/config/config.local.env
 
 # migracja ze starego PM2 (jeśli był uruchomiony ręcznie)
 pm2 delete figlolandia 2>/dev/null || true
 
-./deploy/start.sh
+./deploy/wsl/start.sh
 ```
 
 `start.sh` uruchamia oba procesy PM2 (`figlolandia` + `cloudflared`) i jest **idempotentny** — działa zawsze, niezależnie od tego czy PM2 coś pamięta:
@@ -36,30 +62,68 @@ pm2 delete figlolandia 2>/dev/null || true
 | zarejestrowany (online lub stopped) | `pm2 restart <nazwa>` |
 | brak w PM2 (`pm2 delete`) | `pm2 start ecosystem.config.js` |
 
-Po tygodniu przerwy wystarczy `./deploy/start.sh` — bez zastanawiania się nad stanem PM2.
+Po tygodniu przerwy wystarczy `./deploy/wsl/start.sh` — bez zastanawiania się nad stanem PM2.
 
 | Proces        | Opis                          |
 |---------------|-------------------------------|
 | `figlolandia` | `pnpm start:prod` (port 3008) |
 | `cloudflared` | tunel do localhost:3008       |
 
-## Codzienne operacje
+## Windows host (z roota repo)
+
+Z PowerShell w katalogu projektu na Windows:
+
+```powershell
+pnpm host:start
+pnpm host:stop
+pnpm host:restart
+pnpm host:status
+pnpm host:update
+```
+
+Bezpośrednio też działają skrypty:
+
+```powershell
+.\deploy\windows\status.ps1
+```
+
+`host:status` na górze pokazuje krótkie podsumowanie:
+
+```
+figlolandia online
+cloudflared online
+```
+
+Wrappery `.ps1` uruchamiają odpowiednie skrypty w WSL (`~/apps/figlolandia`).
+
+## Codzienne operacje (WSL)
 
 ```bash
-./deploy/start.sh     # start / restart obu procesów (idempotentny)
-./deploy/stop.sh      # stop obu procesów
-./deploy/restart.sh   # restart tylko aplikacji (tunnel zostaje)
-./deploy/status.sh    # status PM2 + publiczny URL
+./deploy/wsl/start.sh     # start / restart obu procesów (idempotentny)
+./deploy/wsl/stop.sh      # stop obu procesów
+./deploy/wsl/restart.sh   # restart tylko aplikacji (tunnel zostaje)
+./deploy/wsl/status.sh    # podsumowanie + status PM2 + publiczny URL
 ```
 
 ## Aktualizacja kodu
 
+Workflow z Windows hosta:
+
+```text
+[Lokalnie]  kod → git push
+[Host]      pnpm host:update
+```
+
+`host:update` / `./deploy/wsl/update.sh` wykonuje:
+
 ```bash
 git pull
-pnpm install          # po zmianach zależności
-pnpm build            # po zmianach kodu
-./deploy/restart.sh
+pnpm install
+pnpm build
+pm2 restart figlolandia --update-env
 ```
+
+Tunnel (`cloudflared`) **nie** jest restartowany przy update — tylko aplikacja.
 
 Build **nie** jest automatyczny w `start.sh` — decydujesz Ty, kiedy budować i deployować.
 
@@ -84,7 +148,7 @@ Katalog `deploy/logs/` jest w `.gitignore`.
 
 ## Konfiguracja
 
-### `deploy/config.env` (commitowany, bez sekretów)
+### `deploy/config/config.env` (commitowany, bez sekretów)
 
 ```bash
 APP_PORT=3008
@@ -92,9 +156,9 @@ HOST=0.0.0.0
 DOMAIN=
 ```
 
-### `deploy/config.local.env` (gitignored)
+### `deploy/config/config.local.env` (gitignored)
 
-Sekrety i tokeny — skopiuj z `deploy/config.local.env.example`:
+Sekrety i tokeny — skopiuj z `deploy/config/config.local.env.example`:
 
 ```bash
 CLOUDFLARE_TUNNEL_TOKEN=eyJh...
@@ -109,7 +173,7 @@ cloudflared tunnel --url http://127.0.0.1:3008
 ```
 
 - Publiczny adres: losowy `https://*.trycloudflare.com`
-- URL pojawia się w `./deploy/status.sh` i w logach cloudflared
+- URL pojawia się w `./deploy/wsl/status.sh` i w logach cloudflared
 - **URL zmienia się** po restarcie procesu `cloudflared` (nie restartuj go bez potrzeby)
 
 Lokalny dostęp: `http://127.0.0.1:3008`
@@ -138,13 +202,13 @@ W tunelu dodaj **Public Hostname**:
 
 ### 3. Ustaw zmienne w repo
 
-`deploy/config.env`:
+`deploy/config/config.env`:
 
 ```bash
 DOMAIN=figlolandia.pl
 ```
 
-`deploy/config.local.env`:
+`deploy/config/config.local.env`:
 
 ```bash
 CLOUDFLARE_TUNNEL_TOKEN=<token z dashboardu>
@@ -153,9 +217,9 @@ CLOUDFLARE_TUNNEL_TOKEN=<token z dashboardu>
 ### 4. Restart stagingu
 
 ```bash
-./deploy/stop.sh
-./deploy/start.sh
-./deploy/status.sh   # pokaże https://figlolandia.pl
+./deploy/wsl/stop.sh
+./deploy/wsl/start.sh
+./deploy/wsl/status.sh   # pokaże https://figlolandia.pl
 ```
 
 ## Zmienne aplikacji
@@ -169,27 +233,6 @@ Backend czyta standardowe zmienne (ustawiane przez PM2 z `config.env`):
 | `SERVE_WEB`| (włączone)  | Serwowanie Expo web z backendu    |
 
 Frontend w trybie web prod używa `window.location.origin` — działa przez tunnel bez przebudowy z `EXPO_PUBLIC_BACKEND_URL`.
-
-## Pliki deploy
-
-```
-deploy/
-├── config.env                 # port, host, domena (bez sekretów)
-├── config.local.env.example   # szablon sekretów
-├── config.local.env           # lokalnie — gitignored
-├── lib.sh                     # wspólne funkcje bash
-├── start.sh
-├── stop.sh
-├── restart.sh
-├── status.sh
-└── logs/                      # gitignored
-```
-
-Root repo:
-
-```
-ecosystem.config.js            # konfiguracja PM2
-```
 
 ## Rozszerzenie o GitHub Actions (przyszłość)
 
@@ -213,7 +256,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: ./deploy/restart.sh
+      - run: ./deploy/wsl/update.sh
 ```
 
 Trigger `workflow_dispatch` — deploy tylko gdy Ty klikniesz, nie po każdym pushu.

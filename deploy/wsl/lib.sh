@@ -2,18 +2,20 @@
 
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WSL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "${WSL_DIR}/.." && pwd)"
 PROJECT_ROOT="$(cd "${DEPLOY_DIR}/.." && pwd)"
+CONFIG_DIR="${DEPLOY_DIR}/config"
 LOGS_DIR="${DEPLOY_DIR}/logs"
 ECOSYSTEM_FILE="${PROJECT_ROOT}/ecosystem.config.js"
 
 load_deploy_config() {
   set -a
   # shellcheck disable=SC1091
-  source "${DEPLOY_DIR}/config.env"
-  if [[ -f "${DEPLOY_DIR}/config.local.env" ]]; then
+  source "${CONFIG_DIR}/config.env"
+  if [[ -f "${CONFIG_DIR}/config.local.env" ]]; then
     # shellcheck disable=SC1091
-    source "${DEPLOY_DIR}/config.local.env"
+    source "${CONFIG_DIR}/config.local.env"
   fi
   set +a
 
@@ -37,6 +39,25 @@ pm2_process_exists() {
   pm2_process_registered "$1"
 }
 
+pm2_summary_status() {
+  local process_name="$1"
+
+  if ! pm2_process_exists "${process_name}"; then
+    echo "${process_name} not registered"
+    return
+  fi
+
+  local status
+  status="$(
+    pm2 jlist 2>/dev/null | node -e "
+      const list = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+      const proc = list.find((item) => item.name === process.argv[1]);
+      process.stdout.write(proc ? proc.pm2_env.status : 'not registered');
+    " "${process_name}"
+  )"
+  echo "${process_name} ${status}"
+}
+
 start_pm2_process() {
   local process_name="$1"
 
@@ -53,8 +74,8 @@ validate_tunnel_config() {
 
   if [[ -n "${domain_trimmed}" && -z "${token_trimmed}" ]]; then
     echo "ERROR: DOMAIN is set to \"${DOMAIN}\" but CLOUDFLARE_TUNNEL_TOKEN is missing." >&2
-    echo "Add CLOUDFLARE_TUNNEL_TOKEN to deploy/config.local.env" >&2
-    echo "or clear DOMAIN in deploy/config.env to use quick tunnel (trycloudflare.com)." >&2
+    echo "Add CLOUDFLARE_TUNNEL_TOKEN to deploy/config/config.local.env" >&2
+    echo "or clear DOMAIN in deploy/config/config.env to use quick tunnel (trycloudflare.com)." >&2
     exit 1
   fi
 }

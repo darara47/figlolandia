@@ -12,7 +12,12 @@
     "prod:split": "pnpm build && pnpm --parallel --filter ./apps/backend --filter ./apps/frontend start:prod",
     "fe": "pnpm --filter ./apps/frontend start",
     "fe:web": "pnpm --filter ./apps/frontend web",
-    "be": "pnpm --filter ./apps/backend start:dev"
+    "be": "pnpm --filter ./apps/backend start:dev",
+    "host:start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/start.ps1",
+    "host:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/stop.ps1",
+    "host:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/restart.ps1",
+    "host:status": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/status.ps1",
+    "host:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/update.ps1"
   },
   "packageManager": "pnpm@11.10.0"
 }

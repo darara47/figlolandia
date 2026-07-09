@@ -28,10 +28,11 @@ function loadEnvFile(filePath) {
 
 function loadDeployConfig() {
   const deployDir = path.join(__dirname, 'deploy');
+  const configDir = path.join(deployDir, 'config');
 
   return {
-    ...loadEnvFile(path.join(deployDir, 'config.env')),
-    ...loadEnvFile(path.join(deployDir, 'config.local.env')),
+    ...loadEnvFile(path.join(configDir, 'config.env')),
+    ...loadEnvFile(path.join(configDir, 'config.local.env')),
   };
 }
 
@@ -58,7 +59,7 @@ function getCloudflaredConfig(deployConfig) {
     enabled: false,
     reason:
       `DOMAIN is set to "${domain}" but CLOUDFLARE_TUNNEL_TOKEN is missing. ` +
-      'Add the token to deploy/config.local.env or clear DOMAIN for quick tunnel mode.',
+      'Add the token to deploy/config/config.local.env or clear DOMAIN for quick tunnel mode.',
   };
 }
 

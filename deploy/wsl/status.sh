@@ -9,6 +9,10 @@ source "${SCRIPT_DIR}/lib.sh"
 load_deploy_config
 require_pm2
 
+pm2_summary_status "figlolandia"
+pm2_summary_status "cloudflared"
+
+echo ""
 echo "=== PM2 status ==="
 pm2 list
 

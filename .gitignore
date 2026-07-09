@@ -1,7 +1,7 @@
 node_modules
 
 # Staging / deploy secrets & runtime
-deploy/config.local.env
+deploy/config/config.local.env
 deploy/logs/
 deploy/.cloudflared/
 
