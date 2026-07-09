@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, ScrollView, Alert, Pressable, StyleSheet } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { Copy, Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useSocketStore } from '@/src/store/socket.store';
 import { useLobbyStore } from '@/src/store/lobby.store';
@@ -22,6 +24,7 @@ export default function LobbyScreen() {
   const { connect, joinGame, isConnected, isConnecting } = useSocketStore();
   const { phase, updateFromServer } = useGameStore();
   const [loading, setLoading] = useState(false);
+  const [pinCopied, setPinCopied] = useState(false);
 
   const connectionAttemptedRef = useRef<string | null>(null);
   const joinGameAttemptedRef = useRef<string | null>(null);
@@ -176,6 +179,14 @@ export default function LobbyScreen() {
 
   const canStart = isHost && gameState && gameState.players.length >= (config.minPlayers || 3);
 
+  const handleCopyPin = async () => {
+    if (!gamePin) return;
+
+    await Clipboard.setStringAsync(gamePin);
+    setPinCopied(true);
+    setTimeout(() => setPinCopied(false), 2000);
+  };
+
   return (
     <Screen style={styles.screen}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
@@ -188,9 +199,23 @@ export default function LobbyScreen() {
             highlighted
             style={[styles.sectionCard, styles.pinCard]}
           >
-            <Text variant="label" style={styles.cardLabel}>
-              PIN gry
-            </Text>
+            <Row align="center" justify="space-between" style={styles.pinHeader}>
+              <Text variant="label" style={styles.cardLabel}>
+                PIN gry
+              </Text>
+              <Pressable
+                onPress={handleCopyPin}
+                style={styles.copyButton}
+                accessibilityLabel="Kopiuj PIN do schowka"
+                accessibilityRole="button"
+              >
+                {pinCopied ? (
+                  <Check size={20} color={colors.success} />
+                ) : (
+                  <Copy size={20} color={colors.text.secondary} />
+                )}
+              </Pressable>
+            </Row>
             <Text variant="stat" style={styles.pinValue}>
               {gamePin}
             </Text>
@@ -335,7 +360,13 @@ const styles = StyleSheet.create({
     borderColor: colors.brand.DEFAULT,
   },
   cardLabel: {
+    marginBottom: 0,
+  },
+  pinHeader: {
     marginBottom: 8,
+  },
+  copyButton: {
+    padding: 4,
   },
   pinValue: {
     fontSize: 36,

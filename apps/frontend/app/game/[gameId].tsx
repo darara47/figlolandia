@@ -43,7 +43,9 @@ export default function GameScreen() {
   return (
     <View className="flex-1 bg-bg-base">
       <NarratorPanel events={narrativeLog} />
-      {renderScreen()}
+      <View className="min-h-0 flex-1">
+        {renderScreen()}
+      </View>
     </View>
   );
 }

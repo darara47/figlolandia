@@ -10,7 +10,6 @@ import { HandCard } from '@/src/components/cards/HandCard';
 import { PlayerCard } from '@/src/components/player/PlayerCard';
 import { RoundTimer } from '@/src/components/design-system/RoundTimer';
 import { ProfessionPanel } from '@/src/components/design-system/ProfessionPanel';
-import { PlayerAvatar } from '@/src/components/design-system/PlayerAvatar';
 import { PROFESSION_DATA, CATEGORY_COLORS } from '@figlolandia/game-core';
 import { CardDto } from '@/src/types/api';
 import { colors, radius, spacing } from '@/src/theme/tokens';
@@ -234,7 +233,12 @@ export default function PlanningScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.playersList} contentContainerStyle={styles.playersListContent}>
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.mainScrollContent}
+        showsVerticalScrollIndicator
+        nestedScrollEnabled
+      >
         <Text variant="section" style={styles.sectionHeading}>
           Gracze
         </Text>
@@ -252,128 +256,125 @@ export default function PlanningScreen() {
             </View>
           );
         })}
-      </ScrollView>
 
-      <View style={[styles.handPanel, handExpanded && styles.handPanelExpanded]}>
-        <Pressable onPress={() => setHandExpanded(!handExpanded)} style={styles.handToggle}>
-          <View style={styles.handToggleRow}>
-            <Text variant="body" style={styles.handToggleTitle}>
-              Moje karty ({me?.cards.length || 0})
-            </Text>
-            <Text variant="label">{handExpanded ? '▼' : '▲'}</Text>
-          </View>
-        </Pressable>
-
-        {handExpanded && (
-          <ScrollView
-            style={styles.handScroll}
-            contentContainerStyle={styles.handScrollContent}
-            showsVerticalScrollIndicator
+        <View style={styles.handSection}>
+          <Pressable
+            onPress={() => setHandExpanded(!handExpanded)}
+            style={[styles.handToggle, handExpanded && styles.handToggleExpanded]}
           >
-            {me && (
-              <View style={styles.resourceBar}>
-                <View style={styles.resourceItem}>
-                  <Text variant="label">Złoto:</Text>
-                  <Text variant="stat" style={{ color: colors.gold.DEFAULT, marginLeft: 8 }}>
-                    {availableGold}
-                  </Text>
-                </View>
-                {professionData && (
+            <View style={styles.handToggleRow}>
+              <Text variant="body" style={styles.handToggleTitle}>
+                Moje karty ({me?.cards.length || 0})
+              </Text>
+              <Text variant="label">{handExpanded ? '▼' : '▲'}</Text>
+            </View>
+          </Pressable>
+
+          {handExpanded && (
+            <View style={styles.handContent}>
+              {me && (
+                <View style={styles.resourceBar}>
                   <View style={styles.resourceItem}>
-                    <Text variant="label">Zawód:</Text>
-                    <Text variant="body" style={{ marginLeft: 8, fontFamily: 'PlusJakartaSans_700Bold' }}>
-                      {professionData.name}
+                    <Text variant="label">Złoto:</Text>
+                    <Text variant="stat" style={{ color: colors.gold.DEFAULT, marginLeft: 8 }}>
+                      {availableGold}
                     </Text>
                   </View>
-                )}
-              </View>
-            )}
+                  {professionData && (
+                    <View style={styles.resourceItem}>
+                      <Text variant="label">Zawód:</Text>
+                      <Text variant="body" style={{ marginLeft: 8, fontFamily: 'PlusJakartaSans_700Bold' }}>
+                        {professionData.name}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
 
-            <View style={styles.columns}>
-              <View style={styles.buildColumn}>
-                <Text variant="section" style={styles.columnHeading}>
-                  Budowa
-                </Text>
-                <View style={styles.cardsRow}>
-                  {me?.cards.map((card: CardDto) => {
-                    const isSelected = selectedCards.has(card.id);
-                    const atLimit = !isSelected && selectedCards.size >= maxBuildings;
-                    const cost = getCardCost(card);
-                    const cannotAfford = !isSelected && cost > remainingGold;
-                    const cardDisabled = !canBuildInteract || atLimit || cannotAfford;
-                    return (
-                      <View key={card.id} style={styles.cardWrap}>
-                        <HandCard
-                          card={card}
-                          selected={isSelected}
-                          disabled={cardDisabled}
-                          size="hand"
-                          onPress={() => handleCardSelect(card.id)}
-                        />
-                        <Text
-                          variant="label"
-                          style={[
-                            styles.cardCost,
-                            cannotAfford && { color: colors.danger },
-                            isSelected && { color: colors.text.primary },
-                          ]}
-                        >
-                          Koszt: {cost} złota
-                        </Text>
-                      </View>
-                    );
-                  })}
+              <View style={styles.columns}>
+                <View style={styles.buildColumn}>
+                  <Text variant="section" style={styles.columnHeading}>
+                    Budowa
+                  </Text>
+                  <View style={styles.cardsRow}>
+                    {me?.cards.map((card: CardDto) => {
+                      const isSelected = selectedCards.has(card.id);
+                      const atLimit = !isSelected && selectedCards.size >= maxBuildings;
+                      const cost = getCardCost(card);
+                      const cannotAfford = !isSelected && cost > remainingGold;
+                      const cardDisabled = !canBuildInteract || atLimit || cannotAfford;
+                      return (
+                        <View key={card.id} style={styles.cardWrap}>
+                          <HandCard
+                            card={card}
+                            selected={isSelected}
+                            disabled={cardDisabled}
+                            size="hand"
+                            onPress={() => handleCardSelect(card.id)}
+                          />
+                          <Text
+                            variant="label"
+                            style={[
+                              styles.cardCost,
+                              cannotAfford && { color: colors.danger },
+                              isSelected && { color: colors.text.primary },
+                            ]}
+                          >
+                            Koszt: {cost} złota
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  {selectedCards.size > 0 && (
+                    <Text variant="label" style={styles.buildCostInfo}>
+                      Budowa zużyje {selectedCost}{' '}
+                      {selectedCost === 1 ? 'złoto' : 'złota'} z {availableGold} dostępnego (pozostanie{' '}
+                      {remainingGold}).
+                    </Text>
+                  )}
+
+                  <Row gap={12} style={styles.actionsRow}>
+                    <Button
+                      variant="primary"
+                      onPress={handleConfirmBuild}
+                      disabled={!canBuildInteract || selectedCards.size === 0 || localBuildSubmitted}
+                      style={styles.actionButton}
+                    >
+                      Buduj ({selectedCards.size}/{maxBuildings})
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onPress={handleSkipBuild}
+                      disabled={!canBuildInteract || localBuildSubmitted}
+                      style={styles.actionButton}
+                    >
+                      Pomiń budowę
+                    </Button>
+                  </Row>
+
+                  {serverBuildConfirmed && (
+                    <Text variant="label" style={{ color: colors.success }}>
+                      ✓ Budowa potwierdzona
+                    </Text>
+                  )}
                 </View>
 
-                {selectedCards.size > 0 && (
-                  <Text variant="label" style={styles.buildCostInfo}>
-                    Budowa zużyje {selectedCost}{' '}
-                    {selectedCost === 1 ? 'złoto' : 'złota'} z {availableGold} dostępnego (pozostanie{' '}
-                    {remainingGold}).
-                  </Text>
-                )}
+                <View style={styles.professionColumn}>
+                  {professionData && me?.profession && (
+                    <ProfessionPanel profession={me.profession}>
+                      <Text variant="body" style={styles.professionDescription}>
+                        {getProfessionDescription(me.profession)}
+                      </Text>
 
-                <Row gap={12} style={styles.actionsRow}>
-                  <Button
-                    variant="primary"
-                    onPress={handleConfirmBuild}
-                    disabled={!canBuildInteract || selectedCards.size === 0 || localBuildSubmitted}
-                    style={styles.actionButton}
-                  >
-                    Buduj ({selectedCards.size}/{maxBuildings})
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onPress={handleSkipBuild}
-                    disabled={!canBuildInteract || localBuildSubmitted}
-                    style={styles.actionButton}
-                  >
-                    Pomiń budowę
-                  </Button>
-                </Row>
-
-                {serverBuildConfirmed && (
-                  <Text variant="label" style={{ color: colors.success }}>
-                    ✓ Budowa potwierdzona
-                  </Text>
-                )}
-              </View>
-
-              <View style={styles.professionColumn}>
-                {professionData && me?.profession && (
-                  <ProfessionPanel profession={me.profession}>
-                    <Text variant="body" style={styles.professionDescription}>
-                      {getProfessionDescription(me.profession)}
-                    </Text>
-
-                    {professionRequiresChoice ? (
-                      <>
-                        {professionRequiresPlayerTarget && (
-                          <>
-                            <Text variant="label" style={styles.fieldLabel}>
-                              Wybierz gracza (cel)
-                            </Text>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {professionRequiresChoice && (
+                        <>
+                          {professionRequiresPlayerTarget && (
+                            <>
+                              <Text variant="label" style={styles.fieldLabel}>
+                                Wybierz gracza (cel)
+                              </Text>
                               <View style={styles.targetRow}>
                                 {targetPlayers.map((p) => {
                                   const selected = selectedProfessionTargetId === p.id;
@@ -396,7 +397,6 @@ export default function PlanningScreen() {
                                         !canAbilityInteract && styles.targetChipDisabled,
                                       ]}
                                     >
-                                      <PlayerAvatar playerId={p.id} name={p.name} size={32} />
                                       <Text variant="label" style={styles.targetChipLabel}>
                                         {p.name}
                                       </Text>
@@ -412,114 +412,116 @@ export default function PlanningScreen() {
                                   }
                                   style={[
                                     styles.targetChip,
-                                    styles.targetChipSkip,
-                                    selectedProfessionTargetId === SKIP_TARGET && styles.targetChipBrand,
+                                    selectedProfessionTargetId === SKIP_TARGET
+                                      ? styles.targetChipBrand
+                                      : styles.targetChipDefault,
+                                    !canAbilityInteract && styles.targetChipDisabled,
                                   ]}
                                 >
-                                  <Text variant="label">Pomiń</Text>
+                                  <Text variant="label" style={styles.targetChipLabel}>
+                                    Pomiń
+                                  </Text>
                                 </Pressable>
                               </View>
-                            </ScrollView>
-                          </>
-                        )}
+                            </>
+                          )}
 
-                        {professionRequiresCategory && (
-                          <>
-                            <Text variant="label" style={styles.fieldLabel}>
-                              Wybierz kategorię do opodatkowania
-                            </Text>
-                            <View style={styles.categoryRow}>
-                              {TAX_CATEGORIES.map((cat) => {
-                                const selected = selectedTaxCategory === cat.id;
-                                const hasSelection = selectedTaxCategory !== null;
-                                const dimmed = hasSelection && !selected;
-                                const categoryColor =
-                                  CATEGORY_COLORS[cat.id as keyof typeof CATEGORY_COLORS] ||
-                                  '#57628A';
-                                return (
-                                  <Pressable
-                                    key={cat.id}
-                                    disabled={!canAbilityInteract}
-                                    onPress={
-                                      canAbilityInteract
-                                        ? () => setSelectedTaxCategory(cat.id)
-                                        : undefined
-                                    }
-                                    style={[
-                                      styles.categoryChip,
-                                      {
-                                        backgroundColor: categoryColor,
-                                        opacity: !canAbilityInteract ? 0.4 : dimmed ? 0.45 : 1,
-                                        borderWidth: selected ? 3 : 0,
-                                        borderColor: selected ? colors.brand.DEFAULT : 'transparent',
-                                      },
-                                    ]}
-                                  >
-                                    <Text variant="body" style={{ color: '#FFFFFF' }}>
-                                      {cat.label}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
+                          {professionRequiresCategory && (
+                            <>
+                              <Text variant="label" style={styles.fieldLabel}>
+                                Wybierz kategorię do opodatkowania
+                              </Text>
+                              <View style={styles.categoryRow}>
+                                {TAX_CATEGORIES.map((cat) => {
+                                  const selected = selectedTaxCategory === cat.id;
+                                  const hasSelection = selectedTaxCategory !== null;
+                                  const dimmed = hasSelection && !selected;
+                                  const categoryColor =
+                                    CATEGORY_COLORS[cat.id as keyof typeof CATEGORY_COLORS] ||
+                                    '#57628A';
+                                  return (
+                                    <Pressable
+                                      key={cat.id}
+                                      disabled={!canAbilityInteract}
+                                      onPress={
+                                        canAbilityInteract
+                                          ? () => setSelectedTaxCategory(cat.id)
+                                          : undefined
+                                      }
+                                      style={[
+                                        styles.categoryChip,
+                                        {
+                                          backgroundColor: categoryColor,
+                                          opacity: !canAbilityInteract ? 0.4 : dimmed ? 0.45 : 1,
+                                          borderWidth: selected ? 3 : 0,
+                                          borderColor: selected ? colors.brand.DEFAULT : 'transparent',
+                                        },
+                                      ]}
+                                    >
+                                      <Text variant="body" style={{ color: '#FFFFFF' }}>
+                                        {cat.label}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
+                            </>
+                          )}
+
+                          {me.profession === 'thief' && (
+                            <View style={styles.thiefRow}>
+                              <Text variant="label" style={styles.fieldLabel}>
+                                Co ukraść?
+                              </Text>
+                              <View style={styles.choiceRow}>
+                                {(['gold', 'card'] as const).map((t) => {
+                                  const selected = thiefTheftTarget === t;
+                                  return (
+                                    <Pressable
+                                      key={t}
+                                      disabled={!canAbilityInteract}
+                                      onPress={
+                                        canAbilityInteract ? () => setThiefTheftTarget(t) : undefined
+                                      }
+                                      style={[
+                                        styles.choiceChip,
+                                        selected ? styles.choiceChipSelected : styles.choiceChipDefault,
+                                      ]}
+                                    >
+                                      <Text variant="body">
+                                        {t === 'gold' ? 'Złoto' : 'Kartę'}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
                             </View>
-                          </>
-                        )}
+                          )}
 
-                        {me.profession === 'thief' && (
-                          <View style={styles.thiefRow}>
-                            <Text variant="label" style={styles.fieldLabel}>
-                              Co ukraść?
-                            </Text>
-                            <View style={styles.choiceRow}>
-                              {(['gold', 'card'] as const).map((t) => {
-                                const selected = thiefTheftTarget === t;
-                                return (
-                                  <Pressable
-                                    key={t}
-                                    disabled={!canAbilityInteract}
-                                    onPress={
-                                      canAbilityInteract ? () => setThiefTheftTarget(t) : undefined
-                                    }
-                                    style={[
-                                      styles.choiceChip,
-                                      selected ? styles.choiceChipSelected : styles.choiceChipDefault,
-                                    ]}
-                                  >
-                                    <Text variant="body">
-                                      {t === 'gold' ? 'Złoto' : 'Kartę'}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
-                            </View>
-                          </View>
-                        )}
+                          <Button
+                            variant="primary"
+                            onPress={handleConfirmProfessionAbility}
+                            disabled={!canConfirmProfessionAbility || localAbilitySubmitted}
+                            style={styles.fullWidthButton}
+                          >
+                            Zatwierdź operację zdolności
+                          </Button>
+                        </>
+                      )}
 
-                        <Button
-                          variant="primary"
-                          onPress={handleConfirmProfessionAbility}
-                          disabled={!canConfirmProfessionAbility || localAbilitySubmitted}
-                          style={styles.fullWidthButton}
-                        >
-                          Zatwierdź operację zdolności
-                        </Button>
-                      </>
-                    ) : (
-                      <Text variant="label">Zdolność: auto</Text>
-                    )}
-
-                    {professionRequiresChoice && serverAbilityConfirmed && (
-                      <Text variant="label" style={{ color: colors.success, marginTop: 8 }}>
-                        ✓ Zdolność potwierdzona
-                      </Text>
-                    )}
-                  </ProfessionPanel>
-                )}
+                      {professionRequiresChoice && serverAbilityConfirmed && (
+                        <Text variant="label" style={{ color: colors.success, marginTop: 8 }}>
+                          ✓ Zdolność potwierdzona
+                        </Text>
+                      )}
+                    </ProfessionPanel>
+                  )}
+                </View>
               </View>
             </View>
-          </ScrollView>
-        )}
-      </View>
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -551,6 +553,7 @@ function getProfessionDescription(profession: string): string {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: colors.bg.base,
   },
   header: {
@@ -566,13 +569,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  playersList: {
+  mainScroll: {
     flex: 1,
+    minHeight: 0,
   },
-  playersListContent: {
+  mainScrollContent: {
     paddingHorizontal: spacing.screen,
     paddingTop: spacing.screen,
-    paddingBottom: spacing.cardGap,
+    paddingBottom: spacing.screen,
   },
   sectionHeading: {
     marginBottom: 12,
@@ -580,19 +584,20 @@ const styles = StyleSheet.create({
   playerCardWrap: {
     marginBottom: spacing.cardGap,
   },
-  handPanel: {
+  handSection: {
+    marginTop: spacing.cardGap,
     borderTopWidth: 1,
     borderTopColor: colors.border.DEFAULT,
+    borderRadius: radius.card,
     backgroundColor: colors.bg.elevated,
-    height: 128,
-  },
-  handPanelExpanded: {
-    height: 700,
+    overflow: 'hidden',
   },
   handToggle: {
+    padding: 12,
+  },
+  handToggleExpanded: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border.DEFAULT,
-    padding: 12,
   },
   handToggleRow: {
     flexDirection: 'row',
@@ -602,11 +607,7 @@ const styles = StyleSheet.create({
   handToggleTitle: {
     fontFamily: 'PlusJakartaSans_700Bold',
   },
-  handScroll: {
-    flex: 1,
-    minHeight: 0,
-  },
-  handScrollContent: {
+  handContent: {
     padding: spacing.screen,
   },
   resourceBar: {
@@ -682,15 +683,19 @@ const styles = StyleSheet.create({
   },
   targetRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     marginBottom: 12,
-    paddingBottom: 4,
   },
   targetChip: {
-    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.chip,
     borderWidth: 2,
-    padding: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     marginRight: 8,
+    marginBottom: 8,
+    minHeight: 44,
+    maxWidth: '100%',
   },
   targetChipDefault: {
     borderColor: colors.border.DEFAULT,
@@ -701,16 +706,13 @@ const styles = StyleSheet.create({
   targetChipDanger: {
     borderColor: colors.danger,
   },
-  targetChipSkip: {
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
   targetChipDisabled: {
     opacity: 0.4,
   },
   targetChipLabel: {
-    marginTop: 4,
-    fontSize: 12,
+    fontSize: 14,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   categoryRow: {
     flexDirection: 'row',
