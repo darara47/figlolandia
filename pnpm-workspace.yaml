@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+allowBuilds:
+  '@nestjs/core': false
+  '@scarf/scarf': false
+
 ignoredBuiltDependencies:
   - '@scarf/scarf'
 

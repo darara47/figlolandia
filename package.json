@@ -10,5 +10,5 @@
     "fe": "pnpm --filter ./apps/frontend start",
     "be": "pnpm --filter ./apps/backend start:dev"
   },
-  "packageManager": "pnpm@10.27.0"
+  "packageManager": "pnpm@11.10.0"
 }
