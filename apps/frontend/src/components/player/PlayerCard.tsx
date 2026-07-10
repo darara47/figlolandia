@@ -22,6 +22,7 @@ interface PlayerCardProps {
   showProfession?: boolean;
   compact?: boolean;
   highlightNew?: string[];
+  pendingBuildingIds?: string[];
   goldFloats?: GoldFloatItem[];
   onGoldFloatDone?: (id: string) => void;
   /** Start gold counter from this value (e.g. before round income). */
@@ -37,6 +38,7 @@ export const PlayerCard = ({
   showProfession = true,
   compact = false,
   highlightNew = [],
+  pendingBuildingIds = [],
   goldFloats = [],
   onGoldFloatDone,
   goldCounterFrom,
@@ -48,7 +50,9 @@ export const PlayerCard = ({
   const { buildingValue, points } = getPlayerStats(player);
 
   const playerEvents = narrativeEvents.filter((e) => e.playerId === player.id);
-  const buildEvents = playerEvents.filter((e) => e.type === 'build');
+  const buildEvents = playerEvents.filter(
+    (e) => e.type === 'build' || e.type === 'build_delayed',
+  );
 
   const goldAnim = useRef(new Animated.Value(player.gold)).current;
   const [displayedGold, setDisplayedGold] = useState(player.gold);
@@ -153,6 +157,7 @@ export const PlayerCard = ({
         <PlayerSkyline
           buildings={player.buildings}
           highlightNew={newBuildingIds}
+          pendingBuildingIds={pendingBuildingIds}
           size={compact ? 'compact' : 'compact'}
         />
       </View>

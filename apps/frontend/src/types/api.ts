@@ -7,6 +7,7 @@ export interface BuildingDto {
   type: string;
   category: string;
   value: number;
+  pending?: boolean;
 }
 
 export interface CardDto {

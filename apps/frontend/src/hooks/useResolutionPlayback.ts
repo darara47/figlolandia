@@ -9,7 +9,7 @@ import {
   RESOLUTION_TURN_GAP_MS,
 } from '@figlolandia/game-core';
 import { GoldFloatItem } from '@/src/components/design-system/GoldFloatLabel';
-import { getGoldDeltaForEvent } from '@/src/utils/goldDelta';
+import { getGoldFloatsForEvent } from '@/src/utils/goldDelta';
 
 type AnimationSpeed = 'full' | 'fast' | 'off';
 
@@ -40,7 +40,8 @@ const PRE_BUILD_PROFESSION_TYPES = new Set([
   'politician_tax_category',
 ]);
 
-const isBuildEvent = (event: NarrativeEvent) => event.type === 'build';
+const isBuildEvent = (event: NarrativeEvent) =>
+  event.type === 'build' || event.type === 'build_delayed';
 
 const turnDurationMs = (speed: AnimationSpeed, fastMultiplier: number): number =>
   getResolutionTurnDurationMs(speed, fastMultiplier);
@@ -60,15 +61,54 @@ const segmentTurnEvents = (events: NarrativeEvent[]) => {
 };
 
 const applyEventToPlayer = (player: PlayerDto, event: NarrativeEvent): PlayerDto => {
-  if (event.type === 'build') {
+  if (event.type === 'build_delayed') {
     const buildingType = event.data?.buildingType as string | undefined;
     if (!buildingType) return player;
     const buildingData = BUILDING_DATA[buildingType as keyof typeof BUILDING_DATA];
     const newBuilding = {
       id: (event.data?.buildingId as string) ?? `${player.id}-${buildingType}-${Date.now()}`,
       type: buildingType,
+      category: (buildingData?.category ?? 'education') as string,
+      value: 0,
+      pending: true,
+    };
+    return {
+      ...player,
+      gold: Math.max(0, player.gold - ((event.data?.cost as number) ?? 0)),
+      buildings: [...player.buildings, newBuilding],
+      cards: event.data?.cardId
+        ? player.cards.filter((c) => c.id !== event.data?.cardId)
+        : player.cards,
+    };
+  }
+
+  if (event.type === 'build') {
+    const buildingType = event.data?.buildingType as string | undefined;
+    if (!buildingType) return player;
+    const buildingData = BUILDING_DATA[buildingType as keyof typeof BUILDING_DATA];
+    const buildingId = (event.data?.buildingId as string) ?? `${player.id}-${buildingType}-${Date.now()}`;
+    const buildingValue =
+      (event.data?.buildingValue as number) ??
+      (event.data?.cost as number) ??
+      buildingData?.valueRange?.[0] ??
+      1;
+
+    if (event.data?.completedFromPending) {
+      return {
+        ...player,
+        buildings: player.buildings.map((b) =>
+          b.id === buildingId
+            ? { ...b, value: buildingValue, pending: false }
+            : b,
+        ),
+      };
+    }
+
+    const newBuilding = {
+      id: buildingId,
+      type: buildingType,
       category: (event.data?.newCategory ?? buildingData?.category ?? 'education') as string,
-      value: (event.data?.cost as number) ?? buildingData?.valueRange?.[0] ?? 1,
+      value: buildingValue,
     };
     return {
       ...player,
@@ -97,15 +137,27 @@ const applyEventToPlayer = (player: PlayerDto, event: NarrativeEvent): PlayerDto
     return { ...player, gold: player.gold + gained };
   }
 
+  if (event.type === 'theft') {
+    const stolen = (event.data?.stolen as number) ?? 0;
+    if (event.data?.theftType === 'card' || stolen <= 0) return player;
+    if (event.playerId === player.id) {
+      return { ...player, gold: player.gold + stolen };
+    }
+    if (event.data?.targetId === player.id) {
+      return { ...player, gold: Math.max(0, player.gold - stolen) };
+    }
+  }
+
   return player;
 };
 
 const applyEvents = (players: PlayerDto[], events: NarrativeEvent[]): PlayerDto[] =>
-  events.reduce(
-    (acc, event) =>
-      acc.map((p) => (p.id === event.playerId ? applyEventToPlayer(p, event) : p)),
-    players,
-  );
+  events.reduce((acc, event) => {
+    if (event.type === 'theft') {
+      return acc.map((p) => applyEventToPlayer(p, event));
+    }
+    return acc.map((p) => (p.id === event.playerId ? applyEventToPlayer(p, event) : p));
+  }, players);
 
 const collectBuildHighlights = (
   events: NarrativeEvent[],
@@ -121,6 +173,37 @@ const collectBuildHighlights = (
   return next;
 };
 
+const collectPendingBuildings = (
+  events: NarrativeEvent[],
+  prev: Record<string, string[]>,
+): Record<string, string[]> => {
+  const next = { ...prev };
+  for (const event of events) {
+    if (event.type !== 'build_delayed') continue;
+    const buildingId = event.data?.buildingId as string | undefined;
+    if (!buildingId) continue;
+    next[event.playerId] = [...(next[event.playerId] ?? []), buildingId];
+  }
+  for (const event of events) {
+    if (event.type !== 'build' || !event.data?.completedFromPending) continue;
+    const buildingId = event.data?.buildingId as string | undefined;
+    if (!buildingId) continue;
+    next[event.playerId] = (next[event.playerId] ?? []).filter((id) => id !== buildingId);
+  }
+  return next;
+};
+
+const seedPendingFromPlayers = (players: PlayerDto[]): Record<string, string[]> => {
+  const map: Record<string, string[]> = {};
+  for (const player of players) {
+    const pendingIds = player.buildings.filter((b) => b.pending).map((b) => b.id);
+    if (pendingIds.length > 0) {
+      map[player.id] = pendingIds;
+    }
+  }
+  return map;
+};
+
 export const useResolutionPlayback = ({
   players,
   narrativeEvents,
@@ -134,6 +217,7 @@ export const useResolutionPlayback = ({
   const [currentEvent, setCurrentEvent] = useState<NarrativeEvent | null>(null);
   const [turnIndex, setTurnIndex] = useState(0);
   const [highlightNewByPlayer, setHighlightNewByPlayer] = useState<Record<string, string[]>>({});
+  const [pendingBuildingByPlayer, setPendingBuildingByPlayer] = useState<Record<string, string[]>>({});
   const [goldFloats, setGoldFloats] = useState<GoldFloatItem[]>([]);
   const [shakeTargetId, setShakeTargetId] = useState<string | null>(null);
   const [shieldPlayerId, setShieldPlayerId] = useState<string | null>(null);
@@ -169,15 +253,17 @@ export const useResolutionPlayback = ({
     setGoldFloats((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
-  const emitGoldFloats = useCallback((playerId: string, events: NarrativeEvent[]) => {
+  const emitGoldFloats = useCallback((events: NarrativeEvent[]) => {
     for (const event of events) {
-      const delta = getGoldDeltaForEvent(event);
-      if (delta === null || delta === 0) continue;
-      const floatId = `${playerId}-${event.timestamp}-${event.type}-${delta}`;
-      setGoldFloats((prev) => {
-        if (prev.some((f) => f.id === floatId)) return prev;
-        return [...prev, { id: floatId, playerId, amount: delta }];
-      });
+      const floats = getGoldFloatsForEvent(event);
+      for (const { playerId, amount } of floats) {
+        if (amount === 0) continue;
+        const floatId = `${playerId}-${event.timestamp}-${event.type}-${amount}`;
+        setGoldFloats((prev) => {
+          if (prev.some((f) => f.id === floatId)) return prev;
+          return [...prev, { id: floatId, playerId, amount }];
+        });
+      }
     }
   }, []);
 
@@ -218,7 +304,8 @@ export const useResolutionPlayback = ({
       if (options?.highlightBuilds) {
         setHighlightNewByPlayer((prev) => collectBuildHighlights(events, prev));
       }
-      emitGoldFloats(events[0].playerId, events);
+      setPendingBuildingByPlayer((prev) => collectPendingBuildings(events, prev));
+      emitGoldFloats(events);
     },
     [emitGoldFloats],
   );
@@ -236,6 +323,7 @@ export const useResolutionPlayback = ({
     setTurnIndex(0);
     setPlaybackComplete(false);
     setHighlightNewByPlayer({});
+    setPendingBuildingByPlayer(seedPendingFromPlayers(players));
     setGoldFloats([]);
     setShakeTargetId(null);
     setShieldPlayerId(null);
@@ -254,15 +342,8 @@ export const useResolutionPlayback = ({
       playersRef.current = nextPlayers;
       setDisplayPlayers(nextPlayers);
       setHighlightNewByPlayer(collectBuildHighlights(narrativeEvents, {}));
-      for (const event of narrativeEvents) {
-        const delta = getGoldDeltaForEvent(event);
-        if (delta !== null && delta !== 0) {
-          setGoldFloats((prev) => [
-            ...prev,
-            { id: `${event.playerId}-${event.timestamp}`, playerId: event.playerId, amount: delta },
-          ]);
-        }
-      }
+      setPendingBuildingByPlayer(collectPendingBuildings(narrativeEvents, {}));
+      emitGoldFloats(narrativeEvents);
       schedule(() => finishPlayback(), 600);
       return () => clearTimers();
     }
@@ -304,13 +385,13 @@ export const useResolutionPlayback = ({
       }, Math.round(duration * PROFESSION_AT));
     } else if (otherEvents.length > 0) {
       schedule(() => {
+        applyEventBatch(otherEvents);
         setCurrentEvent(otherEvents[0]);
       }, Math.round(duration * PROFESSION_AT));
     }
 
     schedule(() => {
       if (otherEvents.length > 0) {
-        applyEventBatch(otherEvents);
         triggerInteractionEffects(otherEvents);
       } else if (
         preProfession.length === 0 &&
@@ -364,6 +445,7 @@ export const useResolutionPlayback = ({
     currentEvent,
     playerTurns,
     highlightNewByPlayer,
+    pendingBuildingByPlayer,
     goldFloatsByPlayer,
     removeGoldFloat,
     shakeTargetId,

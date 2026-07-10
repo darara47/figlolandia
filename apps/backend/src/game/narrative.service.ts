@@ -57,6 +57,7 @@ export class NarrativeService {
       for (const profAction of professionActions) {
         if (!player.profession || !PRE_BUILD_PROFESSIONS.has(player.profession)) continue;
         const event = this.createProfessionEvent(
+          beforeState,
           player,
           beforePlayer,
           afterState,
@@ -64,6 +65,30 @@ export class NarrativeService {
           nextTimestamp(),
         );
         if (event) playerEvents.push(event);
+      }
+
+      const afterPlayer = afterState.players.find((p) => p.id === player.id);
+      if (afterPlayer) {
+        for (const afterBuilding of afterPlayer.buildings) {
+          const beforeBuilding = beforePlayer.buildings.find((b) => b.id === afterBuilding.id);
+          if (!beforeBuilding?.pending || afterBuilding.pending) continue;
+          const buildingData = BUILDING_DATA[afterBuilding.type];
+          playerEvents.push({
+            type: 'build',
+            playerId: player.id,
+            playerName: player.name,
+            profession: player.profession || undefined,
+            data: {
+              buildingType: afterBuilding.type,
+              buildingName: buildingData.name,
+              cost: 0,
+              buildingId: afterBuilding.id,
+              completedFromPending: true,
+              buildingValue: afterBuilding.value,
+            },
+            timestamp: nextTimestamp(),
+          });
+        }
       }
 
       const buildActions = playerActions.filter((a) => a.type === 'build');
@@ -81,6 +106,7 @@ export class NarrativeService {
       for (const profAction of professionActions) {
         if (!player.profession || !POST_BUILD_PROFESSIONS.has(player.profession)) continue;
         const event = this.createProfessionEvent(
+          beforeState,
           player,
           beforePlayer,
           afterState,
@@ -106,10 +132,48 @@ export class NarrativeService {
     if (!buildAction.buildingType) return null;
 
     const buildingData = BUILDING_DATA[buildAction.buildingType];
-    const afterBuilding = afterState.players
-      .find((p) => p.id === player.id)
-      ?.buildings.find((b) => b.type === buildAction.buildingType);
+    const afterPlayer = afterState.players.find((p) => p.id === player.id);
+    if (!afterPlayer) return null;
 
+    const pendingBuilding = afterPlayer.buildings.find(
+      (b) =>
+        b.type === buildAction.buildingType &&
+        b.pending &&
+        !beforePlayer.buildings.some((existing) => existing.id === b.id),
+    );
+
+    if (pendingBuilding) {
+      const card = buildAction.cardId
+        ? beforePlayer.cards.find((c) => c.id === buildAction.cardId)
+        : null;
+      const cost =
+        buildAction.buildingValue ||
+        (card ? card.buildingValue : null) ||
+        buildingData.valueRange[0];
+      let finalCost = cost;
+      if (player.profession === 'opportunity_hunter') {
+        finalCost = Math.max(0, finalCost - 2);
+      }
+
+      return {
+        type: 'build_delayed',
+        playerId: player.id,
+        playerName: player.name,
+        profession: player.profession || undefined,
+        data: {
+          buildingType: buildAction.buildingType,
+          buildingName: buildingData.name,
+          cost: finalCost,
+          buildingId: pendingBuilding.id,
+        },
+        timestamp,
+      };
+    }
+
+    const afterBuilding = afterPlayer.buildings.find(
+      (b) =>
+        !beforePlayer.buildings.some((existing) => existing.id === b.id) && !b.pending,
+    );
     if (!afterBuilding) return null;
 
     const card = buildAction.cardId
@@ -135,12 +199,14 @@ export class NarrativeService {
         buildingName: buildingData.name,
         cost: finalCost,
         buildingId: afterBuilding.id,
+        buildingValue: afterBuilding.value,
       },
       timestamp,
     };
   }
 
   private createProfessionEvent(
+    beforeState: GameState,
     player: Player,
     beforePlayer: Player,
     afterState: GameState,
@@ -174,8 +240,12 @@ export class NarrativeService {
 
       case 'thief': {
         if (!profAction.target) return null;
+        const beforeTarget = beforeState.players.find((p) => p.id === profAction.target);
         const target = afterState.players.find((p) => p.id === profAction.target);
-        if (!target) return null;
+        if (!target || !beforeTarget) return null;
+        const theftType = profAction.theftTarget || 'gold';
+        const stolen =
+          theftType === 'gold' ? Math.max(0, beforeTarget.gold - target.gold) : undefined;
         return {
           type: 'theft',
           playerId: player.id,
@@ -184,7 +254,8 @@ export class NarrativeService {
           data: {
             targetId: profAction.target,
             targetName: target.name,
-            theftType: profAction.theftTarget || 'gold',
+            theftType,
+            stolen,
           },
           timestamp,
         };

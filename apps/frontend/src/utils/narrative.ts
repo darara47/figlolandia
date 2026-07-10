@@ -47,8 +47,17 @@ export const translateNarrativeEvent = (event: NarrativeEvent): string => {
   switch (event.type) {
     case 'build': {
       const buildingName = event.data?.buildingName || event.data?.buildingType || 'budynek';
+      if (event.data?.completedFromPending) {
+        return `Gracz <b>${event.playerName}</b> kończy budowę ${buildingName}. Budynek zyskuje pełną wartość (${event.data?.buildingValue ?? 0} ${(event.data?.buildingValue ?? 0) === 1 ? 'gwiazdka' : 'gwiazdki'}).`;
+      }
       const cost = event.data?.cost ?? 0;
       return `Gracz <b>${event.playerName}</b>${professionName ? ` jest <b>${professionName.toLowerCase()}</b>` : ''}. Buduje ${buildingName} za ${cost} ${cost === 1 ? 'monetę' : 'monet'}.`;
+    }
+
+    case 'build_delayed': {
+      const buildingName = event.data?.buildingName || event.data?.buildingType || 'budynek';
+      const cost = event.data?.cost ?? 0;
+      return `Gracz <b>${event.playerName}</b> rozpoczyna budowę ${buildingName} za ${cost} ${cost === 1 ? 'monetę' : 'monet'}, ale Inspektor opóźnia jej ukończenie do następnej rundy.`;
     }
 
     case 'architect_change_category': {

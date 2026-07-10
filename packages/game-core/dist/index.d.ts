@@ -26,6 +26,7 @@ export interface Building {
     type: BuildingType;
     category: BuildingCategory;
     value: number;
+    pending?: boolean;
 }
 export interface Card {
     id: string;
@@ -70,6 +71,7 @@ export interface PlayerAction {
     inspectTarget?: string;
     taxedCategory?: BuildingCategory;
     plannedProfession?: Profession;
+    buildingId?: string;
 }
 export type ActionType = 'build' | 'use_profession' | 'pass';
 export declare const BUILDING_DATA: Record<BuildingType, {
@@ -109,6 +111,7 @@ export declare class RoundEngine {
      */
     static resolveRandomEvents(players: Player[], state: GameState, rng: any): void;
     private static resolveBuildings;
+    private static deferBuildAction;
     private static executeBuildActions;
     private static resolveTheft;
     private static resolveDestruction;

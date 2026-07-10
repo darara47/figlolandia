@@ -11,6 +11,7 @@ import { colors, radius, shadows } from '@/src/theme/tokens';
 interface PlayerSkylineProps {
   buildings: BuildingDto[];
   highlightNew?: string[];
+  pendingBuildingIds?: string[];
   size?: 'compact' | 'hero';
   className?: string;
 }
@@ -24,12 +25,16 @@ const SkylineBuilding = ({
   building,
   size,
   isNew,
+  isCompleting,
+  isPending,
   lit,
   onPress,
 }: {
   building: BuildingDto;
   size: 'compact' | 'hero';
   isNew: boolean;
+  isCompleting: boolean;
+  isPending: boolean;
   lit: boolean;
   onPress: () => void;
 }) => {
@@ -37,10 +42,13 @@ const SkylineBuilding = ({
   const categoryColor =
     CATEGORY_COLORS[building.category as keyof typeof CATEGORY_COLORS] ??
     colors.text.tertiary;
+  const displayColor = isPending ? colors.text.tertiary : categoryColor;
   const Icon = getBuildingIcon(building.type);
   const scaleAnim = useRef(new Animated.Value(isNew ? 0.2 : 1)).current;
   const rotateAnim = useRef(new Animated.Value(isNew ? 0 : 1)).current;
+  const opacityAnim = useRef(new Animated.Value(isPending ? 0.55 : 1)).current;
   const hasAnimatedRef = useRef(false);
+  const hasCompletedRef = useRef(false);
 
   useEffect(() => {
     if (isNew && !hasAnimatedRef.current) {
@@ -61,6 +69,44 @@ const SkylineBuilding = ({
     }
   }, [isNew, scaleAnim, rotateAnim]);
 
+  useEffect(() => {
+    if (isCompleting && !hasCompletedRef.current) {
+      hasCompletedRef.current = true;
+      Animated.sequence([
+        Animated.timing(opacityAnim, {
+          toValue: 0.55,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1.08,
+          tension: UI_ANIMATION_MS.spotlightSpring.tension,
+          friction: UI_ANIMATION_MS.spotlightSpring.friction,
+          useNativeDriver: true,
+        }),
+        Animated.parallel([
+          Animated.timing(opacityAnim, {
+            toValue: 1,
+            duration: UI_ANIMATION_MS.buildingEntrance,
+            useNativeDriver: true,
+          }),
+          Animated.spring(scaleAnim, {
+            toValue: 1,
+            tension: UI_ANIMATION_MS.spotlightSpring.tension,
+            friction: UI_ANIMATION_MS.spotlightSpring.friction,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    }
+  }, [isCompleting, opacityAnim, scaleAnim]);
+
+  useEffect(() => {
+    if (isPending && !isCompleting) {
+      opacityAnim.setValue(0.55);
+    }
+  }, [isPending, isCompleting, opacityAnim]);
+
   const rotate = rotateAnim.interpolate({
     inputRange: [0, 0.6, 1],
     outputRange: ['-14deg', '6deg', '0deg'],
@@ -74,26 +120,28 @@ const SkylineBuilding = ({
           {
             width: dims.width,
             height: dims.height,
+            opacity: opacityAnim,
             transform: [{ scale: scaleAnim }, { rotate }],
           },
-          lit && shadows.glow,
+          lit && !isPending && shadows.glow,
         ]}
       >
-        <View style={[styles.categoryBar, { height: dims.bar, backgroundColor: categoryColor }]} />
+        <View style={[styles.categoryBar, { height: dims.bar, backgroundColor: displayColor }]} />
         <View
           style={[
             styles.buildingBody,
             {
-              borderColor: categoryColor,
+              borderColor: displayColor,
               padding: dims.padding,
+              backgroundColor: isPending ? colors.bg.base : colors.bg.elevated,
             },
           ]}
         >
           <View style={styles.iconWrap}>
-            <Icon color={categoryColor} size={dims.icon} strokeWidth={1.75} />
+            <Icon color={displayColor} size={dims.icon} strokeWidth={1.75} />
           </View>
           <View style={styles.starsWrap}>
-            <ValueStars value={building.value} size="xs" />
+            <ValueStars value={isPending ? 0 : building.value} size="xs" />
           </View>
         </View>
       </Animated.View>
@@ -104,6 +152,7 @@ const SkylineBuilding = ({
 export const PlayerSkyline = ({
   buildings,
   highlightNew = [],
+  pendingBuildingIds = [],
   size = 'compact',
   className,
 }: PlayerSkylineProps) => {
@@ -151,7 +200,11 @@ export const PlayerSkyline = ({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
           <View className="flex-row items-end py-2" style={{ gap: 6 }}>
             {buildings.map((building) => {
+              const isPending =
+                pendingBuildingIds.includes(building.id) || building.pending === true;
               const isNew = highlightNew.includes(building.id) && !seenIds.has(building.id);
+              const isCompleting =
+                highlightNew.includes(building.id) && seenIds.has(building.id) && !isPending;
               const lit = highlightNew.includes(building.id) || isNew;
               const isTooltipActive = tooltipBuildingId === building.id;
 
@@ -161,6 +214,8 @@ export const PlayerSkyline = ({
                   building={building}
                   size={size}
                   isNew={isNew}
+                  isCompleting={isCompleting}
+                  isPending={isPending}
                   lit={lit}
                   onPress={() =>
                     setTooltipBuildingId(isTooltipActive ? null : building.id)

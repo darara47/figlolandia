@@ -17,7 +17,7 @@ export const getProfessionEffectKind = (profession?: string): ProfessionEffectKi
 };
 
 export const getEventEffectKind = (event: NarrativeEvent): ProfessionEffectKind => {
-  if (event.type === 'build' || event.type === 'architect_change_category') {
+  if (event.type === 'build' || event.type === 'build_delayed' || event.type === 'architect_change_category') {
     return 'build';
   }
   if (event.type === 'lucky') return 'economy';

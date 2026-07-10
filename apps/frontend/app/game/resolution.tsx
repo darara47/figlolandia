@@ -100,6 +100,12 @@ export default function ResolutionScreen() {
           dimmed={!!playback.activePlayerId && player.id !== playback.activePlayerId}
           useSpotlight={playback.useSpotlight}
           highlightNew={playback.highlightNewByPlayer[player.id] ?? []}
+          pendingBuildingIds={[
+            ...new Set([
+              ...(playback.pendingBuildingByPlayer[player.id] ?? []),
+              ...player.buildings.filter((b) => b.pending).map((b) => b.id),
+            ]),
+          ]}
           goldFloats={playback.goldFloatsByPlayer[player.id] ?? []}
           onGoldFloatDone={playback.removeGoldFloat}
           shake={player.id === playback.shakeTargetId}

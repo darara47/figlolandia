@@ -15,6 +15,7 @@ interface ResolutionPlayerCardProps {
   dimmed: boolean;
   useSpotlight: boolean;
   highlightNew: string[];
+  pendingBuildingIds?: string[];
   goldFloats?: GoldFloatItem[];
   onGoldFloatDone?: (id: string) => void;
   shake: boolean;
@@ -30,6 +31,7 @@ export const ResolutionPlayerCard = ({
   dimmed,
   useSpotlight,
   highlightNew,
+  pendingBuildingIds = [],
   goldFloats = [],
   onGoldFloatDone,
   shake,
@@ -131,6 +133,7 @@ export const ResolutionPlayerCard = ({
         isMe={isMe}
         showProfession
         highlightNew={highlightNew}
+        pendingBuildingIds={pendingBuildingIds}
         goldFloats={goldFloats}
         onGoldFloatDone={onGoldFloatDone}
         narrativeEvents={currentEvent && isActive ? [currentEvent] : []}

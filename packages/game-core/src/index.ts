@@ -96,6 +96,7 @@ export interface Building {
   type: BuildingType;
   category: BuildingCategory;
   value: number; // wartość = koszt budowy (1-5)
+  pending?: boolean; // budynek w trakcie budowy (opóźniony przez Inspektora)
 }
 
 // Karty budynków
@@ -150,6 +151,7 @@ export interface PlayerAction {
   inspectTarget?: string; // dla Szpiega
   taxedCategory?: BuildingCategory; // dla Polityka - kategoria opodatkowana
   plannedProfession?: Profession; // zawód z rundy planowania (dla odłożonych budów Inspektora)
+  buildingId?: string; // ID budynku pending po opóźnieniu przez Inspektora
 }
 
 export type ActionType =
@@ -672,18 +674,9 @@ export class RoundEngine {
         .slice(0, maxBuildings);
 
       if (player.delayedBuildings) {
-        player.deferredBuildActions.push(
-          ...buildActions.map((action) => ({
-            ...action,
-            plannedProfession: player.profession ?? undefined,
-          })),
-        );
-        ResolutionDebug.log(
-          'RESOLUTION',
-          'build.delayed',
-          `${player.name}: opóźniono ${buildActions.length} budów (Inspektor) → deferredBuildActions`,
-          { actions: buildActions },
-        );
+        for (const buildAction of buildActions) {
+          this.deferBuildAction(player, buildAction, state, politicianPlayer);
+        }
         continue;
       }
 
@@ -713,6 +706,85 @@ export class RoundEngine {
     }
   }
 
+  private static deferBuildAction(
+    player: Player,
+    buildAction: PlayerAction,
+    state: GameState,
+    politicianPlayer: Player | undefined,
+  ): void {
+    if (!buildAction.buildingType) return;
+
+    const buildingData = BUILDING_DATA[buildAction.buildingType];
+    if (!buildingData) return;
+
+    const card = buildAction.cardId
+      ? player.cards.find((c) => c.id === buildAction.cardId)
+      : null;
+    const baseValue =
+      buildAction.buildingValue ||
+      (card ? card.buildingValue : null) ||
+      buildingData.valueRange[0];
+    const buildProfession = player.profession;
+    const opportunityHunterDiscount =
+      buildProfession === 'opportunity_hunter' && !player.professionAbilityUsed;
+    let cost = baseValue;
+
+    if (opportunityHunterDiscount) {
+      cost = Math.max(0, cost - 2);
+    }
+
+    if (player.gold < cost) {
+      const skipMessage =
+        `[RoundEngine] Budowa opóźniona pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
+        `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
+      console.warn(skipMessage);
+      ResolutionDebug.log('RESOLUTION', 'build.delayed.skip', skipMessage, {
+        baseValue,
+        cost,
+        profession: buildProfession,
+      });
+      return;
+    }
+
+    const goldBefore = player.gold;
+    player.gold -= cost;
+    ResolutionDebug.logGoldChange(
+      'RESOLUTION',
+      'build.delayed.cost',
+      player,
+      goldBefore,
+      player.gold,
+      {
+        buildingType: buildAction.buildingType,
+        baseValue,
+        cost,
+        opportunityHunter: opportunityHunterDiscount,
+      },
+    );
+
+    const buildingId = `building-${Date.now()}-${Math.random()}`;
+    player.buildings.push({
+      id: buildingId,
+      type: buildAction.buildingType,
+      category: buildingData.category,
+      value: 0,
+      pending: true,
+    });
+
+    player.deferredBuildActions.push({
+      ...buildAction,
+      buildingId,
+      plannedProfession: player.profession ?? undefined,
+    });
+
+    ResolutionDebug.log(
+      'RESOLUTION',
+      'build.delayed',
+      `${player.name}: opóźniono budowę ${buildAction.buildingType} (pending, koszt=${cost})`,
+      { buildingId, cost },
+    );
+  }
+
   private static executeBuildActions(
     player: Player,
     buildActions: PlayerAction[],
@@ -725,6 +797,72 @@ export class RoundEngine {
 
       const buildingData = BUILDING_DATA[buildAction.buildingType];
       if (!buildingData) continue;
+
+      if (source === 'deferred' && buildAction.buildingId) {
+        const pendingBuilding = player.buildings.find(
+          (b) => b.id === buildAction.buildingId && b.pending,
+        );
+        if (!pendingBuilding) {
+          ResolutionDebug.log(
+            'RESOLUTION',
+            'build.deferred.skip',
+            `${player.name}: brak pending budynku ${buildAction.buildingId}`,
+          );
+          continue;
+        }
+
+        const card = buildAction.cardId
+          ? player.cards.find((c) => c.id === buildAction.cardId)
+          : null;
+        const baseValue =
+          buildAction.buildingValue ||
+          (card ? card.buildingValue : null) ||
+          buildingData.valueRange[0];
+
+        let buildingValue = baseValue;
+
+        if (player.urbanistPendingBuildBoost && player.buildingsBuiltThisRound === 0) {
+          buildingValue = Math.min(5, buildingValue + 1);
+          player.urbanistPendingBuildBoost = false;
+          ResolutionDebug.log(
+            'RESOLUTION',
+            'build.urbanist_boost',
+            `${player.name}: +1 wartość odłożonego budynku (${baseValue}→${buildingValue})`,
+          );
+        }
+
+        pendingBuilding.value = buildingValue;
+        pendingBuilding.pending = false;
+        player.buildingsBuiltThisRound++;
+
+        ResolutionDebug.log(
+          'RESOLUTION',
+          `build.success.${source}`,
+          `${player.name}: ukończono odłożony ${buildAction.buildingType} (wartość=${buildingValue})`,
+        );
+
+        if (
+          politicianPlayer &&
+          player.id !== politicianPlayer.id &&
+          state.taxedCategory === buildingData.category
+        ) {
+          const politicianGoldBefore = politicianPlayer.gold;
+          politicianPlayer.gold += 1;
+          ResolutionDebug.logGoldChange(
+            'RESOLUTION',
+            'build.politician_tax',
+            politicianPlayer,
+            politicianGoldBefore,
+            politicianPlayer.gold,
+            {
+              builder: player.name,
+              buildingType: buildAction.buildingType,
+              taxedCategory: state.taxedCategory,
+            },
+          );
+        }
+        continue;
+      }
 
       const card = buildAction.cardId
         ? player.cards.find((c) => c.id === buildAction.cardId)
