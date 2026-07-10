@@ -3,10 +3,13 @@ import {
   AuditEmitter,
   BUILDING_DATA,
   PROFESSION_DATA,
+  RuleEvaluator,
+  EventCorrelation,
   type AuditEventInput,
   type AuditEventPayloadMap,
   type AuditEventRecord,
   type AuditEventType,
+  type EventCorrelationLink,
   type AuditGoldChangeInput,
   type AuditGoldChangeRecord,
   type AuditSink,
@@ -20,6 +23,8 @@ import { AuditConsole } from './AuditConsole';
 import { AuditRecorder } from './AuditRecorder';
 import { AuditStorage } from './AuditStorage';
 import { AuditValidator } from './AuditValidator';
+import { InvestigationEngine } from './InvestigationEngine';
+import type { RuleEvaluationInsert } from './AuditTypes';
 
 /** JSON.stringify z konwersją Map -> obiekt (GameState zawiera Mapy). */
 const mapReplacer = (_key: string, value: unknown): unknown =>
@@ -52,6 +57,7 @@ export class GameAudit implements AuditSink {
     private readonly recorder: AuditRecorder,
     private readonly storage: AuditStorage,
     private readonly validator: AuditValidator,
+    private readonly investigation: InvestigationEngine,
     private readonly auditConsole: AuditConsole,
   ) {
     AuditEmitter.setSink(this);
@@ -217,6 +223,9 @@ export class GameAudit implements AuditSink {
       .filter((r) => r.status === 'FAIL')
       .map((r) => r.checkName);
     this.auditConsole.validation(gameId, round, results.length, failed);
+
+    const inv = this.investigation.investigateRound(gameId, round);
+    this.auditConsole.investigation(gameId, round, inv.findings);
   }
 
   gameFinished(state: GameState, finishedRound: number): void {
@@ -244,6 +253,7 @@ export class GameAudit implements AuditSink {
 
     this.storage.markGameFinished(state.gameId, winnerId || null, Date.now());
     this.recorder.flushNow(state.gameId);
+    this.investigation.investigateGame(state.gameId);
     this.auditConsole.gameFinished(state.gameId, winner?.name ?? null);
     this.playerNames.delete(state.gameId);
   }
@@ -274,8 +284,13 @@ export class GameAudit implements AuditSink {
   // ---------------------------------------------------------------------
 
   event<T extends AuditEventType>(
-    record: AuditEventInput<T> & { gameId: string; round: number },
+    record: AuditEventInput<T> & {
+      gameId: string;
+      round: number;
+    } & Partial<EventCorrelationLink>,
   ): void {
+    const rules = this.drainPendingRules(record);
+    const link = this.resolveCorrelationLink(record);
     this.recorder.record(record.gameId, {
       kind: 'event',
       event: {
@@ -288,7 +303,11 @@ export class GameAudit implements AuditSink {
         message: record.message,
         payloadJson: JSON.stringify(record.payload, mapReplacer),
         createdAt: Date.now(),
+        eventUid: link.eventUid,
+        parentEventUid: link.parentEventUid,
+        correlationId: link.correlationId,
       },
+      rules,
     });
     this.printEvent(record as AuditEventRecord);
   }
@@ -298,13 +317,15 @@ export class GameAudit implements AuditSink {
       gameId: string;
       round: number;
       delta: number;
-    },
+    } & Partial<EventCorrelationLink>,
   ): void {
     this.registerPlayer(record.gameId, record.player.id, record.player.name);
     const sign = record.delta >= 0 ? '+' : '';
     const message =
       record.message ??
       `${record.player.name}: gold ${record.before}→${record.after} (${sign}${record.delta})`;
+    const rules = this.drainPendingRules(record);
+    const link = this.resolveCorrelationLink(record);
 
     this.recorder.record(record.gameId, {
       kind: 'event_with_gold',
@@ -318,6 +339,9 @@ export class GameAudit implements AuditSink {
         message,
         payloadJson: JSON.stringify(record.payload, mapReplacer),
         createdAt: Date.now(),
+        eventUid: link.eventUid,
+        parentEventUid: link.parentEventUid,
+        correlationId: link.correlationId,
       },
       gold: {
         gameId: record.gameId,
@@ -331,12 +355,46 @@ export class GameAudit implements AuditSink {
         reason: record.reason,
         createdAt: Date.now(),
       },
+      rules,
     });
     this.printEvent({
       ...record,
       playerId: record.player.id,
       message,
     } as unknown as AuditEventRecord);
+  }
+
+  private resolveCorrelationLink(
+    record: Partial<EventCorrelationLink>,
+  ): EventCorrelationLink {
+    if (record.eventUid) {
+      return {
+        eventUid: record.eventUid,
+        parentEventUid: record.parentEventUid ?? null,
+        correlationId: record.correlationId ?? null,
+      };
+    }
+    return EventCorrelation.nextLink();
+  }
+
+  private drainPendingRules(record: {
+    gameId: string;
+    round: number;
+    phase: GamePhase;
+  }): RuleEvaluationInsert[] {
+    const createdAt = Date.now();
+    return RuleEvaluator.drain().map((rule) => ({
+      gameId: record.gameId,
+      round: record.round,
+      phase: record.phase,
+      rule: rule.rule,
+      condition: rule.condition,
+      expected: rule.expected,
+      actual: rule.actual,
+      passed: rule.passed,
+      detailsJson: rule.details ? JSON.stringify(rule.details) : null,
+      createdAt,
+    }));
   }
 
   snapshot(record: AuditSnapshotRecord): void {
@@ -348,8 +406,10 @@ export class GameAudit implements AuditSink {
         label: record.label,
         stateJson: serializeState(record.state),
         createdAt: Date.now(),
+        eventsThroughId: 0,
       },
     });
+    this.recorder.flushNow(record.gameId);
   }
 
   /** Wygodny helper dla serwisów backendu. */

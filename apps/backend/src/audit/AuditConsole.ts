@@ -61,6 +61,20 @@ export class AuditConsole {
     }
   }
 
+  investigation(
+    gameId: string,
+    round: number,
+    findings: Array<{ severity: string; summary: string; confidence: number }>,
+  ): void {
+    if (!this.enabled) return;
+    const notable = findings.filter((f) => f.severity !== 'INFO');
+    if (notable.length === 0) return;
+    console.log(`  \u26a0 Investigation [round ${round}]: ${notable.length} issue(s)`);
+    for (const f of notable.slice(0, 3)) {
+      console.log(`    ${f.severity} (${f.confidence}%): ${f.summary}`);
+    }
+  }
+
   gameFinished(gameId: string, winnerName: string | null): void {
     if (!this.enabled) return;
     console.log(

@@ -84,7 +84,12 @@ export declare const PROFESSION_DATA: Record<Profession, {
     category: string;
 }>;
 export { AuditEmitter } from './audit/emitter';
-export type { AuditEventPayloadMap, AuditEventType, AuditEventPayload, AuditEventInput, AuditEventRecord, AuditGoldChangeInput, AuditGoldChangeRecord, AuditSnapshotInput, AuditSnapshotRecord, AuditSink, AuditPlayerBrief, AuditResolutionPlayerBrief, AuditFlagsPlayerBrief, SnapshotLabel, } from './audit/types';
+export { EventCorrelation } from './audit/correlation';
+export type { EventUid } from './audit/correlation';
+export { RuleEvaluator } from './audit/rules';
+export type { RuleEvaluationInput } from './audit/rules';
+export { rulesBuildCost, rulesBuildSkip, rulesPoliticianTax, rulesProfessionSkip, rulesLuckyBonus, rulesAccountantBonus, rulesPoliticianCategory, rulesDiplomatProtection, rulesSaboteurBlock, rulesTheftGold, rulesTheftCard, rulesVandalism, rulesBaseIncome, rulesLastInOrderBonus, rulesRandomEvent, } from './audit/rules';
+export type { AuditEventPayloadMap, AuditEventType, AuditEventPayload, AuditEventInput, AuditEventRecord, AuditGoldChangeInput, AuditGoldChangeRecord, AuditSnapshotInput, AuditSnapshotRecord, AuditSink, AuditPlayerBrief, AuditResolutionPlayerBrief, AuditFlagsPlayerBrief, SnapshotLabel, EventCorrelationLink, } from './audit/types';
 export { RESOLUTION_TURN_MS, RESOLUTION_BUILD_AT, RESOLUTION_PROFESSION_AT, RESOLUTION_TURN_GAP_MS, GOLD_FLOAT_MS, goldFloatTotalMs, getResolutionTurnDurationMs, getResolutionAdvanceDelayMs, UI_ANIMATION_MS, } from './animationTiming';
 /**
  * Minimalny kontrakt RNG wymagany przez RoundEngine.

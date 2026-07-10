@@ -9,6 +9,9 @@ const { AppModule } = require('../apps/backend/dist/app.module');
 const { LobbyService } = require('../apps/backend/dist/game/lobby.service');
 const { GameService } = require('../apps/backend/dist/game/game.service');
 const { AuditQueries } = require('../apps/backend/dist/audit/AuditQueries');
+const { ReplayEngine } = require('../apps/backend/dist/audit/ReplayEngine');
+const { RuleInspector } = require('../apps/backend/dist/audit/RuleInspector');
+const { CorrelationExplorer } = require('../apps/backend/dist/audit/CorrelationExplorer');
 
 const pickAbilityAction = (player, others) => {
   const target = others[0].id;
@@ -33,6 +36,9 @@ const main = async () => {
   const lobby = app.get(LobbyService);
   const game = app.get(GameService);
   const queries = app.get(AuditQueries);
+  const replay = app.get(ReplayEngine);
+  const inspector = app.get(RuleInspector);
+  const correlation = app.get(CorrelationExplorer);
 
   // --- LOBBY ---
   const state0 = lobby.createGame({ hostName: 'Anna' });
@@ -128,6 +134,93 @@ const main = async () => {
 
   const roundDetail = queries.getRound(gameId, 1);
   console.log(`ROUND 1 DETAIL: ${roundDetail.events.length} events, ${roundDetail.goldLedger.length} ledger, ${roundDetail.snapshots.length} snapshots, ${roundDetail.validationResults.length} checks`);
+
+  // --- Replay + State Diff (runda 1) ---
+  const buildDiff = replay.diffSnapshots(gameId, 1, 'AFTER_ABILITIES', 'AFTER_BUILD');
+  if (buildDiff) {
+    console.log('\nSTATE DIFF (AFTER_ABILITIES → AFTER_BUILD):');
+    for (const line of buildDiff.summary) {
+      console.log(`  ${line}`);
+    }
+  }
+
+  const replayR1 = replay.replayRound(gameId, 1);
+  if (replayR1) {
+    console.log(`\nREPLAY ROUND 1: ${replayR1.segments.length} segments, ${replayR1.timeline.length} timeline entries`);
+    for (const seg of replayR1.segments) {
+      const ok = seg.verification.goldLedgerMatchesDiff ? 'OK' : 'MISMATCH';
+      console.log(
+        `  ${seg.from.label} → ${seg.to.label}: ${seg.events.length} events, ${seg.goldLedger.length} ledger rows, diff lines=${seg.diff.summary.length}, verify=${ok}`,
+      );
+      if (seg.verification.issues.length > 0) {
+        for (const issue of seg.verification.issues) {
+          console.log(`    ! ${issue}`);
+        }
+      }
+    }
+  }
+
+  const timeTravel = replay.replayFrom(gameId, 1, 'AFTER_BUILD');
+  if (timeTravel) {
+    console.log(`\nTIME TRAVEL from AFTER_BUILD: ${timeTravel.segments.length} segments to END_ROUND`);
+  }
+
+  // --- Rule Inspector (runda 1) ---
+  const inspection = inspector.inspectRound(gameId, 1);
+  console.log(`\nRULE INSPECTOR ROUND 1: ${inspection.entries.length} decisions, ${inspection.failedRules.length} failed rules`);
+  const buildEntry = inspection.entries.find((e) => e.event.type === 'BUILDING_FINISHED');
+  if (buildEntry) {
+    console.log(`\nBUILD DECISION (${buildEntry.event.message}):`);
+    for (const rule of buildEntry.rules) {
+      const mark = rule.passed ? '✔' : '✘';
+      console.log(`  ${mark} ${rule.rule}: expected=${rule.expected} actual=${rule.actual} (${rule.condition})`);
+    }
+    if (buildEntry.decision) {
+      console.log(`  → Decision: ${buildEntry.decision}`);
+    }
+  }
+  const skipEntry = inspection.entries.find((e) => e.event.type === 'PROFESSION_SKIPPED');
+  if (skipEntry) {
+    console.log(`\nSKIPPED PROFESSION (${skipEntry.event.message.slice(0, 60)}...):`);
+    for (const rule of skipEntry.rules.filter((r) => r.rule !== 'Decision')) {
+      const mark = rule.passed ? '✔' : '✘';
+      console.log(`  ${mark} ${rule.rule}: ${rule.actual} (${rule.condition})`);
+    }
+    const decision = skipEntry.rules.find((r) => r.rule === 'Decision');
+    if (decision) {
+      const reason = decision.details && decision.details.reason ? decision.details.reason : '—';
+      console.log(`  → ${decision.actual} (reason: ${reason})`);
+    }
+  }
+
+  // --- Correlation chains (runda 1) ---
+  const chains = correlation.getChainsForRound(gameId, 1);
+  const buildChain = chains.find((c) =>
+    c.events.some((e) => e.type === 'BUILDING_FINISHED'),
+  );
+  console.log(`\nCORRELATION CHAINS ROUND 1: ${chains.length} operations`);
+  if (buildChain) {
+    console.log(`\nBUILD CHAIN (${buildChain.correlationId.slice(0, 8)}…):`);
+    for (const line of correlation.formatChain(buildChain)) {
+      console.log(`  ${line}`);
+    }
+    const withParent = buildChain.events.filter((e) => e.parentEventUid);
+    console.log(`  linked events: ${buildChain.events.length}, with parent: ${withParent.length}`);
+  }
+
+  // --- Investigation Engine ---
+  const invFindings = queries.getInvestigationFindings(gameId);
+  const bySeverity = { INFO: 0, WARNING: 0, ERROR: 0, CRITICAL: 0 };
+  for (const f of invFindings) bySeverity[f.severity]++;
+  const suspicious = invFindings.some((f) => f.severity !== 'INFO');
+  console.log(`\nINVESTIGATION GAME: ${invFindings.length} findings, suspicious=${suspicious}`);
+  console.log(`  by severity: INFO=${bySeverity.INFO} WARNING=${bySeverity.WARNING} ERROR=${bySeverity.ERROR}`);
+  const notable = invFindings.filter((f) => f.severity !== 'INFO');
+  for (const f of notable.slice(0, 5)) {
+    console.log(`  [${f.severity}] ${f.issueType} (${f.confidence}%): ${f.summary}`);
+    console.log(`    reason: ${f.reason}`);
+  }
+
   console.log('====================================================\n');
 
   await app.close();

@@ -259,12 +259,18 @@ export interface AuditSnapshotInput {
     label: SnapshotLabel;
     state: GameState;
 }
+/** Pola korelacji — łączenie eventów w operacje silnika. */
+export type EventCorrelationLink = {
+    eventUid: string;
+    parentEventUid: string | null;
+    correlationId: string | null;
+};
 /** Rekordy przekazywane do sinka — kontekst gry już rozwiązany. */
-export interface AuditEventRecord extends AuditEventInput {
+export interface AuditEventRecord extends AuditEventInput, EventCorrelationLink {
     gameId: string;
     round: number;
 }
-export interface AuditGoldChangeRecord extends AuditGoldChangeInput {
+export interface AuditGoldChangeRecord extends AuditGoldChangeInput, EventCorrelationLink {
     gameId: string;
     round: number;
     delta: number;

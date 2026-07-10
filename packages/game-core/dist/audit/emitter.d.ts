@@ -15,6 +15,10 @@ export declare class AuditEmitter {
     private static round;
     static setSink(sink: AuditSink | null): void;
     static configure(gameId: string, round: number): void;
+    /** Rozpoczyna łańcuch powiązanych eventów (np. build → tax). */
+    static beginOperation(label?: string): string;
+    static endOperation(): void;
+    private static correlationLink;
     static event<T extends AuditEventType>(input: AuditEventInput<T>): void;
     static goldChange<T extends AuditEventType>(input: AuditGoldChangeInput<T>): void;
     static snapshot(input: AuditSnapshotInput): void;

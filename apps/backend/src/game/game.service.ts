@@ -12,6 +12,8 @@ import {
   BUILDING_DATA,
   getAssignableProfessions,
   getResolutionAdvanceDelayMs,
+  rulesBaseIncome,
+  rulesLastInOrderBonus,
 } from '@figlolandia/game-core';
 import { GameStateManager } from './game.state';
 import { SeededRNG } from '../utils/rng';
@@ -216,6 +218,7 @@ export class GameService {
     state.players.forEach((player) => {
       const goldBefore = player.gold;
       player.gold += 2;
+      rulesBaseIncome({ amount: 2, goldBefore });
       this.gameAudit.goldChange({
         gameId: state.gameId,
         round: state.round,
@@ -304,6 +307,11 @@ export class GameService {
       if (lastPlayer) {
         const goldBefore = lastPlayer.gold;
         lastPlayer.gold += lastMoveGoldBonus;
+        rulesLastInOrderBonus({
+          order: lastPlayer.order,
+          bonus: lastMoveGoldBonus,
+          isLast: true,
+        });
         this.gameAudit.goldChange({
           gameId: state.gameId,
           round: state.round,

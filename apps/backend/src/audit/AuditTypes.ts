@@ -1,6 +1,7 @@
 import type {
   AuditEventPayload,
   AuditEventType,
+  Building,
   Card,
   GameConfig,
   GamePhase,
@@ -38,6 +39,9 @@ export interface EventInsert {
   message: string;
   payloadJson: string | null;
   createdAt: number;
+  eventUid: string | null;
+  parentEventUid: string | null;
+  correlationId: string | null;
 }
 
 export interface GoldLedgerInsert {
@@ -59,6 +63,21 @@ export interface SnapshotInsert {
   label: SnapshotLabel;
   stateJson: string;
   createdAt: number;
+  /** Max event id w momencie zapisu snapshotu — granica segmentów replay. */
+  eventsThroughId: number;
+}
+
+export interface RuleEvaluationInsert {
+  gameId: string;
+  round: number;
+  phase: GamePhase;
+  rule: string;
+  condition: string;
+  expected: string;
+  actual: string;
+  passed: boolean;
+  detailsJson: string | null;
+  createdAt: number;
 }
 
 /**
@@ -66,8 +85,13 @@ export interface SnapshotInsert {
  * że wiersz Gold Ledger zostanie powiązany (FK) z właśnie wstawionym eventem.
  */
 export type AuditBufferEntry =
-  | { kind: 'event'; event: EventInsert }
-  | { kind: 'event_with_gold'; event: EventInsert; gold: GoldLedgerInsert }
+  | { kind: 'event'; event: EventInsert; rules?: RuleEvaluationInsert[] }
+  | {
+    kind: 'event_with_gold';
+    event: EventInsert;
+    gold: GoldLedgerInsert;
+    rules?: RuleEvaluationInsert[];
+  }
   | { kind: 'snapshot'; snapshot: SnapshotInsert };
 
 export interface ValidationResultInsert {
@@ -76,6 +100,38 @@ export interface ValidationResultInsert {
   checkName: string;
   status: ValidationStatus;
   detailsJson: string | null;
+}
+
+export type InvestigationSeverity = 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+
+export type InvestigationIssueType =
+  | 'LargeGoldSwing'
+  | 'RepeatedProfessionSkip'
+  | 'RepeatedBuildFailure'
+  | 'PlayerNeverDraws'
+  | 'TaxNeverApplied'
+  | 'NoRandomEvents'
+  | 'RepeatedProtection'
+  | 'GoldExplosion'
+  | 'BuildingCostMismatchTrend'
+  | 'UnusedProfession'
+  | 'TooManyBlockedActions'
+  | 'CardCountOscillation'
+  | 'SnapshotDrift'
+  | 'ProfessionBonusNeverReceived'
+  | 'PossibleLogicAnomaly';
+
+export interface InvestigationFindingInsert {
+  gameId: string;
+  round: number | null;
+  issueType: InvestigationIssueType;
+  severity: InvestigationSeverity;
+  confidence: number;
+  playerId: string | null;
+  playerName: string | null;
+  summary: string;
+  reason: string;
+  evidenceJson: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +172,9 @@ export interface EventRow {
   message: string;
   payloadJson: string | null;
   createdAt: number;
+  eventUid: string | null;
+  parentEventUid: string | null;
+  correlationId: string | null;
 }
 
 export interface GoldLedgerRow {
@@ -140,6 +199,7 @@ export interface SnapshotRow {
   label: SnapshotLabel;
   stateJson: string;
   createdAt: number;
+  eventsThroughId: number;
 }
 
 export interface ValidationResultRow {
@@ -149,6 +209,36 @@ export interface ValidationResultRow {
   checkName: string;
   status: ValidationStatus;
   detailsJson: string | null;
+  createdAt: number;
+}
+
+export interface RuleEvaluationRow {
+  id: number;
+  eventId: number;
+  gameId: string;
+  round: number;
+  phase: GamePhase;
+  rule: string;
+  condition: string;
+  expected: string;
+  actual: string;
+  passed: number;
+  detailsJson: string | null;
+  createdAt: number;
+}
+
+export interface InvestigationFindingRow {
+  id: number;
+  gameId: string;
+  round: number | null;
+  issueType: InvestigationIssueType;
+  severity: InvestigationSeverity;
+  confidence: number;
+  playerId: string | null;
+  playerName: string | null;
+  summary: string;
+  reason: string;
+  evidenceJson: string | null;
   createdAt: number;
 }
 
@@ -194,6 +284,9 @@ export interface AuditEventDto {
   message: string;
   payload: AuditEventPayload | null;
   createdAt: number;
+  eventUid: string | null;
+  parentEventUid: string | null;
+  correlationId: string | null;
 }
 
 export interface AuditGoldEntryDto {
@@ -218,6 +311,8 @@ export interface AuditSnapshotDto {
   label: SnapshotLabel;
   state: SerializedGameState;
   createdAt: number;
+  /** Ostatni event id w momencie snapshotu (0 = stary zapis, fallback po createdAt). */
+  eventsThroughId: number;
 }
 
 export interface AuditValidationDto {
@@ -249,4 +344,184 @@ export interface AuditRoundDetailDto {
   goldLedger: AuditGoldEntryDto[];
   snapshots: AuditSnapshotDto[];
   validationResults: AuditValidationDto[];
+}
+
+// ---------------------------------------------------------------------------
+// State Diff — porównanie dwóch snapshotów (bez surowych JSON-ów)
+// ---------------------------------------------------------------------------
+
+export interface StateScalarChange {
+  path: string;
+  before: string | number | boolean | null;
+  after: string | number | boolean | null;
+}
+
+export interface BuildingValueChange {
+  buildingId: string;
+  buildingType: string;
+  before: number;
+  after: number;
+}
+
+export interface PlayerStateDiff {
+  playerId: string;
+  playerName: string;
+  gold?: { before: number; after: number };
+  profession?: { before: string | null; after: string | null };
+  cards?: { added: Card[]; removed: Card[] };
+  buildings?: {
+    added: Building[];
+    removed: Building[];
+    valueChanges: BuildingValueChange[];
+  };
+  flags?: StateScalarChange[];
+}
+
+export interface GameLevelDiff {
+  phase?: { before: GamePhase; after: GamePhase };
+  round?: { before: number; after: number };
+  taxedCategory?: {
+    before: string | undefined;
+    after: string | undefined;
+  };
+  winner?: { before: string | null; after: string | null };
+}
+
+/** Czytelny wynik diff — gotowy pod timeline i dashboard. */
+export interface StateDiffResult {
+  gameLevel: GameLevelDiff;
+  players: PlayerStateDiff[];
+  /** Linie do wyświetlenia, np. "Bartek: gold 6 → 1" */
+  summary: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Replay Engine — odtwarzanie rundy przez snapshot → eventy → snapshot
+// ---------------------------------------------------------------------------
+
+export interface ReplaySegmentEndpoint {
+  snapshotId: number;
+  round: number;
+  label: SnapshotLabel;
+  createdAt: number;
+  eventsThroughId: number;
+}
+
+export interface ReplaySegmentVerification {
+  goldLedgerMatchesDiff: boolean;
+  issues: string[];
+}
+
+export interface ReplaySegment {
+  from: ReplaySegmentEndpoint;
+  to: ReplaySegmentEndpoint;
+  diff: StateDiffResult;
+  events: AuditEventDto[];
+  goldLedger: AuditGoldEntryDto[];
+  verification: ReplaySegmentVerification;
+}
+
+export type TimelineEntry =
+  | {
+    kind: 'snapshot';
+    snapshotId: number;
+    label: SnapshotLabel;
+    createdAt: number;
+  }
+  | {
+    kind: 'event';
+    event: AuditEventDto;
+  }
+  | {
+    kind: 'diff';
+    fromLabel: SnapshotLabel;
+    toLabel: SnapshotLabel;
+    summary: string[];
+  };
+
+export interface ReplayRoundResult {
+  gameId: string;
+  round: number;
+  segments: ReplaySegment[];
+  timeline: TimelineEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Rule Inspector — ocena reguł silnika powiązana z eventami
+// ---------------------------------------------------------------------------
+
+export interface RuleEvaluationDto {
+  id: number;
+  eventId: number;
+  gameId: string;
+  round: number;
+  phase: GamePhase;
+  rule: string;
+  condition: string;
+  expected: string;
+  actual: string;
+  passed: boolean;
+  details: unknown;
+  createdAt: number;
+}
+
+/** Event + drzewo decyzji — gotowe pod dashboard DevTools. */
+export interface RuleInspectionEntry {
+  event: AuditEventDto;
+  rules: RuleEvaluationDto[];
+  decision: string | null;
+  allPassed: boolean;
+}
+
+export interface RuleInspectionRoundResult {
+  gameId: string;
+  round: number;
+  entries: RuleInspectionEntry[];
+  failedRules: RuleEvaluationDto[];
+}
+
+// ---------------------------------------------------------------------------
+// Correlation — łańcuchy powiązanych eventów
+// ---------------------------------------------------------------------------
+
+export interface CorrelationChainDto {
+  correlationId: string;
+  gameId: string;
+  round: number;
+  events: AuditEventDto[];
+  rootEventUid: string;
+  leafEventUid: string;
+}
+
+// ---------------------------------------------------------------------------
+// Investigation Engine — podejrzane wzorce zachowania gry
+// ---------------------------------------------------------------------------
+
+export interface InvestigationFindingDto {
+  id: number;
+  gameId: string;
+  round: number | null;
+  issueType: InvestigationIssueType;
+  severity: InvestigationSeverity;
+  confidence: number;
+  playerId: string | null;
+  playerName: string | null;
+  summary: string;
+  reason: string;
+  evidence: unknown;
+  createdAt: number;
+}
+
+export interface InvestigationRoundResult {
+  gameId: string;
+  round: number;
+  findings: InvestigationFindingDto[];
+  suspicious: boolean;
+}
+
+export interface InvestigationGameResult {
+  gameId: string;
+  findings: InvestigationFindingDto[];
+  suspicious: boolean;
+  bySeverity: Record<InvestigationSeverity, number>;
 }

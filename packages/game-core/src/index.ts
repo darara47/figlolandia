@@ -224,8 +224,44 @@ export const PROFESSION_DATA: Record<
 };
 
 import { AuditEmitter } from './audit/emitter';
+import {
+  rulesAccountantBonus,
+  rulesBuildCost,
+  rulesBuildSkip,
+  rulesDiplomatProtection,
+  rulesLuckyBonus,
+  rulesPoliticianCategory,
+  rulesPoliticianTax,
+  rulesProfessionSkip,
+  rulesRandomEvent,
+  rulesSaboteurBlock,
+  rulesTheftCard,
+  rulesTheftGold,
+  rulesVandalism,
+} from './audit/rules';
 
 export { AuditEmitter } from './audit/emitter';
+export { EventCorrelation } from './audit/correlation';
+export type { EventUid } from './audit/correlation';
+export { RuleEvaluator } from './audit/rules';
+export type { RuleEvaluationInput } from './audit/rules';
+export {
+  rulesBuildCost,
+  rulesBuildSkip,
+  rulesPoliticianTax,
+  rulesProfessionSkip,
+  rulesLuckyBonus,
+  rulesAccountantBonus,
+  rulesPoliticianCategory,
+  rulesDiplomatProtection,
+  rulesSaboteurBlock,
+  rulesTheftGold,
+  rulesTheftCard,
+  rulesVandalism,
+  rulesBaseIncome,
+  rulesLastInOrderBonus,
+  rulesRandomEvent,
+} from './audit/rules';
 export type {
   AuditEventPayloadMap,
   AuditEventType,
@@ -241,6 +277,7 @@ export type {
   AuditResolutionPlayerBrief,
   AuditFlagsPlayerBrief,
   SnapshotLabel,
+  EventCorrelationLink,
 } from './audit/types';
 export {
   RESOLUTION_TURN_MS,
@@ -400,6 +437,11 @@ export class RoundEngine {
       if (politicianAction?.taxedCategory) {
         state.taxedCategory = politicianAction.taxedCategory;
         politicianPlayer.professionAbilityUsed = true;
+        rulesPoliticianCategory({
+          hasCategory: true,
+          category: politicianAction.taxedCategory,
+        });
+        AuditEmitter.beginOperation('politician_category');
         AuditEmitter.event({
           type: 'PROFESSION_USED',
           phase: 'RESOLUTION',
@@ -420,7 +462,9 @@ export class RoundEngine {
           message: `Opodatkowana kategoria: ${politicianAction.taxedCategory}`,
           payload: { taxedCategory: politicianAction.taxedCategory },
         });
+        AuditEmitter.endOperation();
       } else {
+        rulesPoliticianCategory({ hasCategory: false });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -432,12 +476,13 @@ export class RoundEngine {
       }
     }
 
-    // 2. Dyplomata — najwyższy priorytet obrony
+    // 2. Dyplomata
     for (const player of players) {
       if (player.profession !== 'diplomat' || player.professionAbilityUsed) continue;
 
       const professionAction = findProfessionAction(player.id);
       if (!professionAction) {
+        rulesProfessionSkip({ profession: 'diplomat', reason: 'no_action' });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -451,6 +496,7 @@ export class RoundEngine {
 
       player.protected = true;
       player.professionAbilityUsed = true;
+      rulesDiplomatProtection();
       AuditEmitter.event({
         type: 'PROFESSION_USED',
         phase: 'RESOLUTION',
@@ -489,6 +535,11 @@ export class RoundEngine {
       const target = players.find((p) => p.id === professionAction.target);
       if (target && !target.protected) {
         target.professionAbilityUsed = true;
+        rulesSaboteurBlock({
+          targetExists: true,
+          targetProtected: false,
+          blocked: true,
+        });
         AuditEmitter.event({
           type: 'PROFESSION_USED',
           phase: 'RESOLUTION',
@@ -503,6 +554,11 @@ export class RoundEngine {
           },
         });
       } else {
+        rulesSaboteurBlock({
+          targetExists: !!target,
+          targetProtected: target?.protected ?? false,
+          blocked: false,
+        });
         AuditEmitter.event({
           type: 'PROFESSION_USED',
           phase: 'RESOLUTION',
@@ -532,6 +588,11 @@ export class RoundEngine {
           !['politician', 'diplomat', 'saboteur'].includes(player.profession) &&
           player.professionAbilityUsed
         ) {
+          rulesProfessionSkip({
+            profession: player.profession,
+            reason: 'ability_blocked',
+            saboteurBlocked: true,
+          });
           AuditEmitter.event({
             type: 'PROFESSION_SKIPPED',
             phase: 'RESOLUTION',
@@ -562,6 +623,7 @@ export class RoundEngine {
           const goldBefore = player.gold;
           player.gold += 2;
           player.luckyGoldGranted = 2;
+          rulesLuckyBonus({ goldBefore });
           AuditEmitter.goldChange({
             type: 'PROFESSION_USED',
             phase: 'RESOLUTION',
@@ -746,6 +808,7 @@ export class RoundEngine {
           if (player.gold < 2) {
             const goldBefore = player.gold;
             player.gold += 2;
+            rulesAccountantBonus({ gold: goldBefore });
             AuditEmitter.goldChange({
               type: 'PROFESSION_USED',
               phase: 'RESOLUTION',
@@ -757,6 +820,7 @@ export class RoundEngine {
               payload: { profession: 'accountant', effect: 'low_gold_bonus' },
             });
           } else {
+            rulesAccountantBonus({ gold: player.gold });
             AuditEmitter.event({
               type: 'PROFESSION_SKIPPED',
               phase: 'RESOLUTION',
@@ -788,6 +852,7 @@ export class RoundEngine {
     const threshold = state.config.eventFrequency / 100;
 
     if (roll >= threshold) {
+      rulesRandomEvent({ roll, threshold, fired: false });
       AuditEmitter.event({
         type: 'RANDOM_EVENT',
         phase: 'PREP',
@@ -802,6 +867,13 @@ export class RoundEngine {
     const bonus = rng.randomInt(1, 3);
     const goldBefore = randomPlayer.gold;
     randomPlayer.gold += bonus;
+    rulesRandomEvent({
+      roll,
+      threshold,
+      fired: true,
+      playerName: randomPlayer.name,
+      bonus,
+    });
     AuditEmitter.goldChange({
       type: 'RANDOM_EVENT',
       phase: 'PREP',
@@ -929,6 +1001,13 @@ export class RoundEngine {
       const skipMessage =
         `Budowa opóźniona pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
         `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
+      rulesBuildSkip({
+        buildingType: buildAction.buildingType,
+        baseValue,
+        cost,
+        gold: player.gold,
+        reason: 'insufficient_gold',
+      });
       AuditEmitter.event({
         type: 'BUILD_SKIPPED',
         phase: 'RESOLUTION',
@@ -951,6 +1030,8 @@ export class RoundEngine {
     const goldBefore = player.gold;
     player.gold -= cost;
 
+    AuditEmitter.beginOperation('delayed_build');
+
     const buildingId = `building-${Date.now()}-${Math.random()}`;
     const startedPayload = {
       buildingId,
@@ -962,6 +1043,15 @@ export class RoundEngine {
     };
 
     if (cost > 0) {
+      rulesBuildCost({
+        buildingType: buildAction.buildingType,
+        baseValue,
+        discount: opportunityHunterDiscount ? Math.min(2, baseValue) : 0,
+        cost,
+        gold: goldBefore,
+        opportunityHunter: opportunityHunterDiscount,
+        source: 'delayed',
+      });
       AuditEmitter.goldChange({
         type: 'BUILDING_STARTED',
         phase: 'RESOLUTION',
@@ -1012,6 +1102,7 @@ export class RoundEngine {
         kind: 'build_deferred',
       },
     });
+    AuditEmitter.endOperation();
   }
 
   private static executeBuildActions(
@@ -1057,6 +1148,8 @@ export class RoundEngine {
           buildingData.valueRange[0];
 
         let buildingValue = baseValue;
+
+        AuditEmitter.beginOperation('build');
 
         let urbanistBoost = false;
         if (player.urbanistPendingBuildBoost && player.buildingsBuiltThisRound === 0) {
@@ -1108,6 +1201,12 @@ export class RoundEngine {
         ) {
           const politicianGoldBefore = politicianPlayer.gold;
           politicianPlayer.gold += 1;
+          rulesPoliticianTax({
+            taxedCategory: state.taxedCategory,
+            buildingCategory: buildingData.category,
+            builderId: player.id,
+            politicianId: politicianPlayer.id,
+          });
           AuditEmitter.goldChange({
             type: 'TAX_APPLIED',
             phase: 'RESOLUTION',
@@ -1124,6 +1223,7 @@ export class RoundEngine {
             },
           });
         }
+        AuditEmitter.endOperation();
         continue;
       }
 
@@ -1148,6 +1248,13 @@ export class RoundEngine {
         const skipMessage =
           `Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
           `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
+        rulesBuildSkip({
+          buildingType: buildAction.buildingType,
+          baseValue,
+          cost,
+          gold: player.gold,
+          reason: 'insufficient_gold',
+        });
         AuditEmitter.event({
           type: 'BUILD_SKIPPED',
           phase: 'RESOLUTION',
@@ -1169,6 +1276,8 @@ export class RoundEngine {
 
       const goldBefore = player.gold;
       player.gold -= cost;
+
+      AuditEmitter.beginOperation('build');
 
       let buildingValue = baseValue;
       let urbanistBoost = false;
@@ -1216,6 +1325,16 @@ export class RoundEngine {
         `${player.name}: wybudowano ${buildAction.buildingType} (wartość=${buildingValue}, kategoria=${buildingData.category})`;
 
       if (cost > 0) {
+        rulesBuildCost({
+          buildingType: buildAction.buildingType,
+          baseValue,
+          discount: opportunityHunterDiscount ? Math.min(2, baseValue) : 0,
+          cost,
+          gold: goldBefore,
+          opportunityHunter: opportunityHunterDiscount,
+          urbanistBoost,
+          source,
+        });
         AuditEmitter.goldChange({
           type: 'BUILDING_FINISHED',
           phase: 'RESOLUTION',
@@ -1245,6 +1364,12 @@ export class RoundEngine {
       ) {
         const politicianGoldBefore = politicianPlayer.gold;
         politicianPlayer.gold += 1;
+        rulesPoliticianTax({
+          taxedCategory: state.taxedCategory,
+          buildingCategory: buildingData.category,
+          builderId: player.id,
+          politicianId: politicianPlayer.id,
+        });
         AuditEmitter.goldChange({
           type: 'TAX_APPLIED',
           phase: 'RESOLUTION',
@@ -1261,6 +1386,7 @@ export class RoundEngine {
           },
         });
       }
+      AuditEmitter.endOperation();
     }
   }
 
@@ -1274,6 +1400,11 @@ export class RoundEngine {
       if (player.profession !== 'thief') continue;
 
       if (player.professionAbilityUsed) {
+        rulesProfessionSkip({
+          profession: 'thief',
+          reason: 'ability_blocked',
+          saboteurBlocked: true,
+        });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -1291,6 +1422,7 @@ export class RoundEngine {
       );
 
       if (!professionAction || !professionAction.target) {
+        rulesProfessionSkip({ profession: 'thief', reason: 'no_action_or_target' });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -1304,6 +1436,12 @@ export class RoundEngine {
 
       const target = players.find((p) => p.id === professionAction.target);
       if (!target || target.protected) {
+        rulesProfessionSkip({
+          profession: 'thief',
+          reason: !target ? 'target_missing' : 'target_protected',
+          targetId: professionAction.target,
+          targetProtected: target?.protected,
+        });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -1325,6 +1463,15 @@ export class RoundEngine {
         const thiefGoldBefore = player.gold;
         target.gold -= stolen;
         player.gold += stolen;
+        rulesTheftGold({
+          thiefName: player.name,
+          targetName: target.name,
+          targetGold: targetGoldBefore,
+          targetProtected: false,
+          abilityBlocked: false,
+          stolen,
+        });
+        AuditEmitter.beginOperation('theft');
         AuditEmitter.goldChange({
           type: 'THEFT',
           phase: 'RESOLUTION',
@@ -1361,10 +1508,17 @@ export class RoundEngine {
             role: 'thief',
           },
         });
+        AuditEmitter.endOperation();
       } else if (professionAction.theftTarget === 'card') {
         if (target.cards.length > 0) {
           const stolenCard = target.cards.pop()!;
           player.cards.push(stolenCard);
+          rulesTheftCard({
+            targetName: target.name,
+            cardsAvailable: target.cards.length + 1,
+            success: true,
+          });
+          AuditEmitter.beginOperation('theft_card');
           AuditEmitter.event({
             type: 'THEFT',
             phase: 'RESOLUTION',
@@ -1409,7 +1563,13 @@ export class RoundEngine {
               source: 'theft',
             },
           });
+          AuditEmitter.endOperation();
         } else {
+          rulesTheftCard({
+            targetName: target.name,
+            cardsAvailable: 0,
+            success: false,
+          });
           AuditEmitter.event({
             type: 'PROFESSION_SKIPPED',
             phase: 'RESOLUTION',
@@ -1437,6 +1597,11 @@ export class RoundEngine {
       if (player.profession !== 'vandal') continue;
 
       if (player.professionAbilityUsed) {
+        rulesProfessionSkip({
+          profession: 'vandal',
+          reason: 'ability_blocked',
+          saboteurBlocked: true,
+        });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -1454,6 +1619,7 @@ export class RoundEngine {
       );
 
       if (!professionAction || !professionAction.target) {
+        rulesProfessionSkip({ profession: 'vandal', reason: 'no_action_or_target' });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -1467,6 +1633,17 @@ export class RoundEngine {
 
       const target = players.find((p) => p.id === professionAction.target);
       if (!target || target.protected || target.buildings.length === 0) {
+        const reason = !target
+          ? 'target_missing'
+          : target.protected
+            ? 'target_protected'
+            : 'target_has_no_buildings';
+        rulesProfessionSkip({
+          profession: 'vandal',
+          reason,
+          targetId: professionAction.target,
+          targetProtected: target?.protected,
+        });
         AuditEmitter.event({
           type: 'PROFESSION_SKIPPED',
           phase: 'RESOLUTION',
@@ -1492,6 +1669,16 @@ export class RoundEngine {
 
       const valueBefore = building.value;
       building.value = Math.max(0, building.value - 2);
+      rulesVandalism({
+        targetName: target.name,
+        targetProtected: false,
+        abilityBlocked: false,
+        buildingsCount: target.buildings.length,
+        buildingType: building.type,
+        valueBefore,
+        valueAfter: building.value,
+      });
+      AuditEmitter.beginOperation('vandal');
       AuditEmitter.event({
         type: 'VANDALISM',
         phase: 'RESOLUTION',
@@ -1507,6 +1694,7 @@ export class RoundEngine {
           valueAfter: building.value,
         },
       });
+      AuditEmitter.endOperation();
     }
   }
 

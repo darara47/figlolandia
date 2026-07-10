@@ -4,7 +4,9 @@ import type {
   AuditGoldChangeInput,
   AuditSink,
   AuditSnapshotInput,
+  EventCorrelationLink,
 } from './types';
+import { EventCorrelation } from './correlation';
 
 /**
  * Most między silnikiem gry a systemem audytu.
@@ -28,12 +30,28 @@ export class AuditEmitter {
   static configure(gameId: string, round: number): void {
     AuditEmitter.gameId = gameId;
     AuditEmitter.round = round;
+    EventCorrelation.endOperation();
+  }
+
+  /** Rozpoczyna łańcuch powiązanych eventów (np. build → tax). */
+  static beginOperation(label?: string): string {
+    return EventCorrelation.beginOperation(label);
+  }
+
+  static endOperation(): void {
+    EventCorrelation.endOperation();
+  }
+
+  private static correlationLink(): EventCorrelationLink {
+    return EventCorrelation.nextLink();
   }
 
   static event<T extends AuditEventType>(input: AuditEventInput<T>): void {
     if (!AuditEmitter.sink) return;
+    const link = AuditEmitter.correlationLink();
     AuditEmitter.sink.event({
       ...input,
+      ...link,
       gameId: AuditEmitter.gameId,
       round: AuditEmitter.round,
     });
@@ -45,8 +63,10 @@ export class AuditEmitter {
     if (!AuditEmitter.sink) return;
     const delta = input.after - input.before;
     if (delta === 0) return;
+    const link = AuditEmitter.correlationLink();
     AuditEmitter.sink.goldChange({
       ...input,
+      ...link,
       gameId: AuditEmitter.gameId,
       round: AuditEmitter.round,
       delta,
