@@ -81,9 +81,9 @@ export class LobbyService {
     };
 
     // Utwórz gracza-hosta (start z 4 złotkami i 2 kartami budynków)
-    const rng = new SeededRNG(Date.now());
+    const rng = new SeededRNG(params.seed ?? Date.now());
     const startingCards = Array.from({ length: 2 }, (_, idx) =>
-      this.drawBuildingCard(rng, `card-start-${Date.now()}-${idx}`)
+      this.drawBuildingCard(rng, `card-start-${params.seed ?? 'host'}-${idx}`)
     );
 
     const host: Player = {
@@ -112,7 +112,7 @@ export class LobbyService {
       round: 0,
       players: [host],
       config,
-      seed: Date.now(), // seed z timestampu
+      seed: params.seed ?? Date.now(),
       winner: null,
       pendingActions: new Map(),
     };
@@ -182,9 +182,12 @@ export class LobbyService {
     }
 
     // Utwórz nowego gracza (start z 4 złotkami i 2 kartami budynków)
-    const rng = new SeededRNG(Date.now() + state.players.length);
+    const rng = new SeededRNG(state.seed + state.players.length * 1000);
     const startingCards = Array.from({ length: 2 }, (_, idx) =>
-      this.drawBuildingCard(rng, `card-start-${Date.now()}-${idx}`)
+      this.drawBuildingCard(
+        rng,
+        `card-start-${state.seed}-${state.players.length}-${idx}`,
+      )
     );
 
     const newPlayer: Player = {

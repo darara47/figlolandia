@@ -17,7 +17,7 @@ const serveWeb =
       ? [
         ServeStaticModule.forRoot({
           rootPath: frontendDistPath,
-          exclude: ['/api*', '/games*', '/health', '/status', '/socket.io*'],
+          exclude: ['/api*', '/games*', '/debug*', '/health', '/status', '/socket.io*'],
           serveStaticOptions: {
             index: 'index.html',
           },

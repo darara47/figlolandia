@@ -1,0 +1,340 @@
+{
+  "generatedAt": "2026-07-10T21:55:47.049Z",
+  "gameCount": 5,
+  "seed": 9001,
+  "auditDbPath": null,
+  "runs": [
+    {
+      "gameId": "game-1783720546206-lfyvemyds",
+      "timings": [
+        {
+          "label": "game_1",
+          "ms": 138.0053999999999
+        },
+        {
+          "label": "getGameReport_1",
+          "ms": 8.935000000000173
+        },
+        {
+          "label": "replayRound_1_r1",
+          "ms": 0.8806999999999334
+        },
+        {
+          "label": "replayRound_1_r2",
+          "ms": 0.9151000000001659
+        },
+        {
+          "label": "replayRound_1_r3",
+          "ms": 1.0054000000000087
+        }
+      ],
+      "dbSizeBytes": null,
+      "health": {
+        "validationOk": true,
+        "replayOk": true,
+        "suspicious": true
+      }
+    },
+    {
+      "gameId": "game-1783720546356-0fhnr9j4z",
+      "timings": [
+        {
+          "label": "game_2",
+          "ms": 130.356
+        },
+        {
+          "label": "getGameReport_2",
+          "ms": 5.8052000000000135
+        },
+        {
+          "label": "replayRound_2_r1",
+          "ms": 0.5781999999999243
+        },
+        {
+          "label": "replayRound_2_r2",
+          "ms": 0.5440000000000964
+        },
+        {
+          "label": "replayRound_2_r3",
+          "ms": 0.5770999999999731
+        }
+      ],
+      "dbSizeBytes": null,
+      "health": {
+        "validationOk": true,
+        "replayOk": true,
+        "suspicious": true
+      }
+    },
+    {
+      "gameId": "game-1783720546494-cm5f6151d",
+      "timings": [
+        {
+          "label": "game_3",
+          "ms": 194.84879999999998
+        },
+        {
+          "label": "getGameReport_3",
+          "ms": 5.33420000000001
+        },
+        {
+          "label": "replayRound_3_r1",
+          "ms": 1.008100000000013
+        },
+        {
+          "label": "replayRound_3_r2",
+          "ms": 1.187800000000152
+        },
+        {
+          "label": "replayRound_3_r3",
+          "ms": 1.0353000000000065
+        }
+      ],
+      "dbSizeBytes": null,
+      "health": {
+        "validationOk": true,
+        "replayOk": true,
+        "suspicious": true
+      }
+    },
+    {
+      "gameId": "game-1783720546697-o38sipp3r",
+      "timings": [
+        {
+          "label": "game_4",
+          "ms": 131.83129999999983
+        },
+        {
+          "label": "getGameReport_4",
+          "ms": 5.997700000000123
+        },
+        {
+          "label": "replayRound_4_r1",
+          "ms": 0.4377999999999247
+        },
+        {
+          "label": "replayRound_4_r2",
+          "ms": 0.9459999999999127
+        },
+        {
+          "label": "replayRound_4_r3",
+          "ms": 0.9477999999999156
+        }
+      ],
+      "dbSizeBytes": null,
+      "health": {
+        "validationOk": true,
+        "replayOk": true,
+        "suspicious": true
+      }
+    },
+    {
+      "gameId": "game-1783720546838-7e79dgrkt",
+      "timings": [
+        {
+          "label": "game_5",
+          "ms": 178.06770000000006
+        },
+        {
+          "label": "getGameReport_5",
+          "ms": 24.530500000000075
+        },
+        {
+          "label": "replayRound_5_r1",
+          "ms": 2.1177000000000135
+        },
+        {
+          "label": "replayRound_5_r2",
+          "ms": 3.2551999999998316
+        },
+        {
+          "label": "replayRound_5_r3",
+          "ms": 3.019900000000007
+        }
+      ],
+      "dbSizeBytes": null,
+      "health": {
+        "validationOk": true,
+        "replayOk": true,
+        "suspicious": true
+      }
+    }
+  ],
+  "summary": {
+    "game_1": {
+      "count": 1,
+      "totalMs": 138.0053999999999,
+      "avgMs": 138.0053999999999,
+      "minMs": 138.0053999999999,
+      "maxMs": 138.0053999999999
+    },
+    "getGameReport_1": {
+      "count": 1,
+      "totalMs": 8.935000000000173,
+      "avgMs": 8.935000000000173,
+      "minMs": 8.935000000000173,
+      "maxMs": 8.935000000000173
+    },
+    "replayRound_1_r1": {
+      "count": 1,
+      "totalMs": 0.8806999999999334,
+      "avgMs": 0.8806999999999334,
+      "minMs": 0.8806999999999334,
+      "maxMs": 0.8806999999999334
+    },
+    "replayRound_1_r2": {
+      "count": 1,
+      "totalMs": 0.9151000000001659,
+      "avgMs": 0.9151000000001659,
+      "minMs": 0.9151000000001659,
+      "maxMs": 0.9151000000001659
+    },
+    "replayRound_1_r3": {
+      "count": 1,
+      "totalMs": 1.0054000000000087,
+      "avgMs": 1.0054000000000087,
+      "minMs": 1.0054000000000087,
+      "maxMs": 1.0054000000000087
+    },
+    "game_2": {
+      "count": 1,
+      "totalMs": 130.356,
+      "avgMs": 130.356,
+      "minMs": 130.356,
+      "maxMs": 130.356
+    },
+    "getGameReport_2": {
+      "count": 1,
+      "totalMs": 5.8052000000000135,
+      "avgMs": 5.8052000000000135,
+      "minMs": 5.8052000000000135,
+      "maxMs": 5.8052000000000135
+    },
+    "replayRound_2_r1": {
+      "count": 1,
+      "totalMs": 0.5781999999999243,
+      "avgMs": 0.5781999999999243,
+      "minMs": 0.5781999999999243,
+      "maxMs": 0.5781999999999243
+    },
+    "replayRound_2_r2": {
+      "count": 1,
+      "totalMs": 0.5440000000000964,
+      "avgMs": 0.5440000000000964,
+      "minMs": 0.5440000000000964,
+      "maxMs": 0.5440000000000964
+    },
+    "replayRound_2_r3": {
+      "count": 1,
+      "totalMs": 0.5770999999999731,
+      "avgMs": 0.5770999999999731,
+      "minMs": 0.5770999999999731,
+      "maxMs": 0.5770999999999731
+    },
+    "game_3": {
+      "count": 1,
+      "totalMs": 194.84879999999998,
+      "avgMs": 194.84879999999998,
+      "minMs": 194.84879999999998,
+      "maxMs": 194.84879999999998
+    },
+    "getGameReport_3": {
+      "count": 1,
+      "totalMs": 5.33420000000001,
+      "avgMs": 5.33420000000001,
+      "minMs": 5.33420000000001,
+      "maxMs": 5.33420000000001
+    },
+    "replayRound_3_r1": {
+      "count": 1,
+      "totalMs": 1.008100000000013,
+      "avgMs": 1.008100000000013,
+      "minMs": 1.008100000000013,
+      "maxMs": 1.008100000000013
+    },
+    "replayRound_3_r2": {
+      "count": 1,
+      "totalMs": 1.187800000000152,
+      "avgMs": 1.187800000000152,
+      "minMs": 1.187800000000152,
+      "maxMs": 1.187800000000152
+    },
+    "replayRound_3_r3": {
+      "count": 1,
+      "totalMs": 1.0353000000000065,
+      "avgMs": 1.0353000000000065,
+      "minMs": 1.0353000000000065,
+      "maxMs": 1.0353000000000065
+    },
+    "game_4": {
+      "count": 1,
+      "totalMs": 131.83129999999983,
+      "avgMs": 131.83129999999983,
+      "minMs": 131.83129999999983,
+      "maxMs": 131.83129999999983
+    },
+    "getGameReport_4": {
+      "count": 1,
+      "totalMs": 5.997700000000123,
+      "avgMs": 5.997700000000123,
+      "minMs": 5.997700000000123,
+      "maxMs": 5.997700000000123
+    },
+    "replayRound_4_r1": {
+      "count": 1,
+      "totalMs": 0.4377999999999247,
+      "avgMs": 0.4377999999999247,
+      "minMs": 0.4377999999999247,
+      "maxMs": 0.4377999999999247
+    },
+    "replayRound_4_r2": {
+      "count": 1,
+      "totalMs": 0.9459999999999127,
+      "avgMs": 0.9459999999999127,
+      "minMs": 0.9459999999999127,
+      "maxMs": 0.9459999999999127
+    },
+    "replayRound_4_r3": {
+      "count": 1,
+      "totalMs": 0.9477999999999156,
+      "avgMs": 0.9477999999999156,
+      "minMs": 0.9477999999999156,
+      "maxMs": 0.9477999999999156
+    },
+    "game_5": {
+      "count": 1,
+      "totalMs": 178.06770000000006,
+      "avgMs": 178.06770000000006,
+      "minMs": 178.06770000000006,
+      "maxMs": 178.06770000000006
+    },
+    "getGameReport_5": {
+      "count": 1,
+      "totalMs": 24.530500000000075,
+      "avgMs": 24.530500000000075,
+      "minMs": 24.530500000000075,
+      "maxMs": 24.530500000000075
+    },
+    "replayRound_5_r1": {
+      "count": 1,
+      "totalMs": 2.1177000000000135,
+      "avgMs": 2.1177000000000135,
+      "minMs": 2.1177000000000135,
+      "maxMs": 2.1177000000000135
+    },
+    "replayRound_5_r2": {
+      "count": 1,
+      "totalMs": 3.2551999999998316,
+      "avgMs": 3.2551999999998316,
+      "minMs": 3.2551999999998316,
+      "maxMs": 3.2551999999998316
+    },
+    "replayRound_5_r3": {
+      "count": 1,
+      "totalMs": 3.019900000000007,
+      "avgMs": 3.019900000000007,
+      "minMs": 3.019900000000007,
+      "maxMs": 3.019900000000007
+    }
+  }
+}

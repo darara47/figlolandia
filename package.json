@@ -17,7 +17,10 @@
     "host:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/stop.ps1",
     "host:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/restart.ps1",
     "host:status": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/status.ps1",
-    "host:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/update.ps1"
+    "host:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/update.ps1",
+    "audit:smoke": "node tools/audit-smoke.cjs",
+    "audit:benchmark": "node tools/audit-benchmark.cjs",
+    "audit:golden": "node tools/golden-games-run.cjs"
   },
   "packageManager": "pnpm@11.10.0"
 }

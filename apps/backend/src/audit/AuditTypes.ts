@@ -525,3 +525,61 @@ export interface InvestigationGameResult {
   suspicious: boolean;
   bySeverity: Record<InvestigationSeverity, number>;
 }
+
+// ---------------------------------------------------------------------------
+// Audit Read Service — composite DTO dla konsumentów (REST, narzędzia, UI)
+// ---------------------------------------------------------------------------
+
+export interface AuditValidationSummaryDto {
+  total: number;
+  failed: number;
+  byRound: Record<number, AuditValidationDto[]>;
+}
+
+export interface AuditRoundHealthDto {
+  replayOk: boolean;
+  validationOk: boolean;
+  suspicious: boolean;
+}
+
+export interface AuditGameSummaryDto {
+  game: AuditGameDto;
+  rounds: AuditRoundDto[];
+  validation: AuditValidationSummaryDto;
+  investigation: InvestigationGameResult;
+}
+
+export interface AuditRoundAnalysisDto {
+  detail: AuditRoundDetailDto;
+  replay: ReplayRoundResult | null;
+  rules: RuleInspectionRoundResult;
+  correlations: CorrelationChainDto[];
+  investigation: InvestigationRoundResult;
+  health: AuditRoundHealthDto;
+}
+
+export interface AuditGameHealthDto {
+  validationOk: boolean;
+  replayOk: boolean;
+  suspicious: boolean;
+}
+
+export interface AuditGameReportDto {
+  summary: AuditGameSummaryDto;
+  rounds: AuditRoundAnalysisDto[];
+  eventCounts: Record<string, number>;
+  health: AuditGameHealthDto;
+}
+
+export interface AuditEventContextDto {
+  event: AuditEventDto;
+  rules: RuleEvaluationDto[];
+  correlationChain: CorrelationChainDto | null;
+  goldLedger: AuditGoldEntryDto[];
+}
+
+export interface AuditPlayerTimelineDto {
+  playerId: string;
+  history: AuditPlayerHistoryDto;
+  findings: InvestigationFindingDto[];
+}

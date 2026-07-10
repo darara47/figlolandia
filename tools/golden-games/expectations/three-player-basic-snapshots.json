@@ -1,0 +1,102 @@
+{
+  "scenario": "three-player-basic",
+  "hash": "3bbbc98ac41128fb8d9b30b8c015c2076e78456cd73dd7cfe4a30944fe018d41",
+  "canonical": {
+    "1": {
+      "player-celina": {
+        "gold": 3,
+        "profession": "inspector",
+        "cardCount": 2,
+        "buildingCount": 1,
+        "buildingTypes": [
+          "cinema"
+        ]
+      },
+      "player-bartek": {
+        "gold": 5,
+        "profession": "politician",
+        "cardCount": 2,
+        "buildingCount": 1,
+        "buildingTypes": [
+          "auction_house"
+        ]
+      },
+      "player-anna": {
+        "gold": 1,
+        "profession": "diplomat",
+        "cardCount": 2,
+        "buildingCount": 1,
+        "buildingTypes": [
+          "town_hall"
+        ]
+      }
+    },
+    "2": {
+      "player-anna": {
+        "gold": 0,
+        "profession": "urbanist",
+        "cardCount": 2,
+        "buildingCount": 2,
+        "buildingTypes": [
+          "auction_house",
+          "town_hall"
+        ]
+      },
+      "player-bartek": {
+        "gold": 5,
+        "profession": "inspector",
+        "cardCount": 2,
+        "buildingCount": 2,
+        "buildingTypes": [
+          "auction_house",
+          "bank"
+        ]
+      },
+      "player-celina": {
+        "gold": 4,
+        "profession": "politician",
+        "cardCount": 2,
+        "buildingCount": 2,
+        "buildingTypes": [
+          "cinema",
+          "city_archive"
+        ]
+      }
+    },
+    "3": {
+      "player-celina": {
+        "gold": 3,
+        "profession": "accountant",
+        "cardCount": 2,
+        "buildingCount": 3,
+        "buildingTypes": [
+          "cinema",
+          "city_archive",
+          "park"
+        ]
+      },
+      "player-bartek": {
+        "gold": 8,
+        "profession": "lucky",
+        "cardCount": 2,
+        "buildingCount": 3,
+        "buildingTypes": [
+          "auction_house",
+          "bank",
+          "cemetery"
+        ]
+      },
+      "player-anna": {
+        "gold": 1,
+        "profession": "diplomat",
+        "cardCount": 2,
+        "buildingCount": 3,
+        "buildingTypes": [
+          "auction_house",
+          "school",
+          "town_hall"
+        ]
+      }
+    }
+  }
+}

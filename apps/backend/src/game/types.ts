@@ -14,6 +14,8 @@ export interface GameInstance {
 export interface CreateGameParams {
   hostId: string;
   hostName: string;
+  /** Opcjonalny seed dla testów deterministycznych (golden games). */
+  seed?: number;
 }
 
 export interface JoinGameParams {

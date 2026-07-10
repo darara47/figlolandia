@@ -1,0 +1,29 @@
+{
+  "name": "three-player-basic",
+  "description": "3 graczy, 3 rundy — bazowy scenariusz smoke/golden",
+  "seed": 42424242,
+  "config": {
+    "maxRounds": 3,
+    "victoryThreshold": 50,
+    "eventFrequency": 50
+  },
+  "players": {
+    "hostId": "player-anna",
+    "hostName": "Anna",
+    "playerBId": "player-bartek",
+    "playerBName": "Bartek",
+    "playerCId": "player-celina",
+    "playerCName": "Celina"
+  },
+  "expect": {
+    "validation": {
+      "allOk": true
+    },
+    "replay": {
+      "allSegmentsVerified": true
+    },
+    "investigation": {
+      "maxSeverity": "WARNING"
+    }
+  }
+}
