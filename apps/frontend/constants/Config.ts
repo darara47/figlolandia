@@ -20,7 +20,14 @@ export const getBackendUrl = (): string => {
     return process.env.EXPO_PUBLIC_BACKEND_URL;
   }
 
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+  // Same-origin tylko w produkcji, gdy frontend jest serwowany przez backend.
+  // W dev (Expo na :8081) origin wskazuje na serwer bundlera, nie API.
+  if (
+    !isDev &&
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    window.location?.origin
+  ) {
     return window.location.origin;
   }
 
