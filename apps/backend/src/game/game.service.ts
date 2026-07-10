@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   GameState,
   GameConfig,
@@ -11,13 +11,13 @@ import {
   Card,
   BUILDING_DATA,
   getAssignableProfessions,
-  ResolutionDebug,
   getResolutionAdvanceDelayMs,
 } from '@figlolandia/game-core';
 import { GameStateManager } from './game.state';
 import { SeededRNG } from '../utils/rng';
 import { NarrativeService } from './narrative.service';
 import { NarrativeEvent } from '../websocket/ws.types';
+import { GameAudit } from '../audit/GameAudit';
 
 type PlanningStep = {
   buildConfirmed: boolean;
@@ -37,7 +37,6 @@ type ResolutionPending = {
  */
 @Injectable()
 export class GameService {
-  private readonly logger = new Logger(GameService.name);
   static readonly PLANNING_PHASE_TIMEOUT_MS = 600000; // 10 minut
   private readonly PLANNING_TIMEOUT = GameService.PLANNING_PHASE_TIMEOUT_MS;
   private planningTimeouts: Map<string, NodeJS.Timeout> = new Map();
@@ -51,6 +50,7 @@ export class GameService {
   constructor(
     private readonly gameStateManager: GameStateManager,
     private readonly narrativeService: NarrativeService,
+    private readonly gameAudit: GameAudit,
   ) { }
 
   /** JSON clone traci Map — przywraca pendingActions i spiedHands przed użyciem stanu gry. */
@@ -144,6 +144,8 @@ export class GameService {
     state.phase = 'PREP';
     state.round = 1;
 
+    this.gameAudit.gameStarted(state);
+
     // Wykonaj przygotowanie rundy
     this.prepareRound(state);
 
@@ -156,21 +158,9 @@ export class GameService {
    */
   private prepareRound(state: GameState): void {
     const rng = new SeededRNG(state.seed + state.round);
-    ResolutionDebug.configure(state.gameId, state.round);
-    ResolutionDebug.log(
-      'PREP',
-      'start',
-      `Przygotowanie rundy ${state.round}`,
-      {
-        players: state.players.map((p) => ({
-          id: p.id,
-          name: p.name,
-          gold: p.gold,
-          profession: p.profession,
-          deferredBuilds: p.deferredBuildActions.length,
-        })),
-      },
-    );
+    // Otwiera rundę w audycie: wiersz w rounds, event ROUND_STARTED,
+    // snapshot BEFORE_PREPARATION i kontekst emittera dla RoundEngine.
+    this.gameAudit.beginRound(state);
 
     // Reset stanów zawodów
     state.players.forEach((player) => {
@@ -209,11 +199,16 @@ export class GameService {
       if (player.profession) {
         assignedProfessions.add(player.profession);
         player.lastProfession = player.profession;
-        ResolutionDebug.log(
-          'PREP',
-          'profession',
-          `${player.name}: przypisano zawód ${player.profession}`,
-        );
+        this.gameAudit.event({
+          gameId: state.gameId,
+          round: state.round,
+          type: 'PROFESSION_ASSIGNED',
+          phase: 'PREP',
+          step: 'profession',
+          playerId: player.id,
+          message: `${player.name}: przypisano zawód ${player.profession}`,
+          payload: { profession: player.profession },
+        });
       }
     });
 
@@ -221,13 +216,19 @@ export class GameService {
     state.players.forEach((player) => {
       const goldBefore = player.gold;
       player.gold += 2;
-      ResolutionDebug.logGoldChange(
-        'PREP',
-        'base_income',
+      this.gameAudit.goldChange({
+        gameId: state.gameId,
+        round: state.round,
+        type: 'BASE_INCOME',
+        phase: 'PREP',
+        step: 'base_income',
         player,
-        goldBefore,
-        player.gold,
-      );
+        before: goldBefore,
+        after: player.gold,
+        delta: player.gold - goldBefore,
+        reason: 'base_income',
+        payload: { amount: 2 },
+      });
     });
 
     // 3. Rozdaj karty budynków: każdy gracz otrzymuje 1 kartę budynku
@@ -266,6 +267,24 @@ export class GameService {
         }
 
         player.cards.push(card);
+
+        this.gameAudit.event({
+          gameId: state.gameId,
+          round: state.round,
+          type: 'CARD_DRAWN',
+          phase: 'PREP',
+          step: 'card_draw',
+          playerId: player.id,
+          message: `${player.name}: dobrano kartę ${card.name} (${card.buildingValue})`,
+          payload: {
+            cardId: card.id,
+            cardName: card.name,
+            buildingType: card.buildingType,
+            buildingCategory: card.buildingCategory,
+            buildingValue: card.buildingValue,
+            source: 'prep',
+          },
+        });
       }
     });
 
@@ -285,28 +304,23 @@ export class GameService {
       if (lastPlayer) {
         const goldBefore = lastPlayer.gold;
         lastPlayer.gold += lastMoveGoldBonus;
-        ResolutionDebug.logGoldChange(
-          'PREP',
-          'last_in_order',
-          lastPlayer,
-          goldBefore,
-          lastPlayer.gold,
-          { order: lastPlayer.order, bonus: lastMoveGoldBonus },
-        );
+        this.gameAudit.goldChange({
+          gameId: state.gameId,
+          round: state.round,
+          type: 'LAST_IN_ORDER_BONUS',
+          phase: 'PREP',
+          step: 'last_in_order',
+          player: lastPlayer,
+          before: goldBefore,
+          after: lastPlayer.gold,
+          delta: lastPlayer.gold - goldBefore,
+          reason: 'last_in_order_bonus',
+          payload: { order: lastPlayer.order, bonus: lastMoveGoldBonus },
+        });
       }
     }
 
-    ResolutionDebug.log(
-      'PREP',
-      'order',
-      'Kolejność rozstrzygania',
-      {
-        players: state.players
-          .slice()
-          .sort((a, b) => a.order - b.order)
-          .map((p) => ({ name: p.name, id: p.id, order: p.order })),
-      },
-    );
+    this.gameAudit.turnOrderSet(state);
 
     // 6. Rozstrzygnij zdarzenia losowe (przed fazą PLANNING)
     // UWAGA: Zdarzenia losowe mogą dać bonus złota (1-3) losowemu graczowi,
@@ -324,8 +338,13 @@ export class GameService {
     // Wyczyść poprzednie akcje
     state.pendingActions.clear();
 
-    ResolutionDebug.logGoldSnapshot('PREP', 'end', state.players);
-    ResolutionDebug.flushSummary(`PREP round ${state.round}`);
+    this.gameAudit.snapshotState(
+      state.gameId,
+      state.round,
+      'PREP',
+      'AFTER_PREPARATION',
+      state,
+    );
   }
 
   /**
@@ -699,7 +718,6 @@ export class GameService {
     if (planningSteps) {
       const autoAbilityProfessions = new Set(['lucky', 'diplomat', 'urbanist']);
       state.pendingActions.clear();
-      ResolutionDebug.configure(state.gameId, state.round);
       for (const p of state.players) {
         const step = planningSteps.get(p.id);
         const fullySubmitted =
@@ -707,16 +725,24 @@ export class GameService {
 
         if (options?.skipIncompletePlayers && !fullySubmitted) {
           state.pendingActions.set(p.id, []);
-          ResolutionDebug.log(
-            'RESOLUTION',
-            'planning_input',
-            `${p.name}: pominięto — brak pełnego zatwierdzenia przed timeoutem`,
-            {
+          this.gameAudit.event({
+            gameId: state.gameId,
+            round: state.round,
+            type: 'PLANNING_CONFIRMED',
+            phase: 'RESOLUTION',
+            step: 'planning_input',
+            playerId: p.id,
+            message: `${p.name}: pominięto — brak pełnego zatwierdzenia przed timeoutem`,
+            payload: {
               profession: p.profession,
               buildConfirmed: step?.buildConfirmed ?? false,
               abilityConfirmed: step?.abilityConfirmed ?? false,
+              buildActions: [],
+              abilityActions: [],
+              autoInjected: false,
+              skipped: true,
             },
-          );
+          });
           continue;
         }
 
@@ -732,36 +758,39 @@ export class GameService {
         const combined = [...(step?.buildActions || []), ...abilityActions];
         state.pendingActions.set(p.id, combined);
 
-        ResolutionDebug.log(
-          'RESOLUTION',
-          'planning_input',
-          `${p.name}: akcje wejściowe do RoundEngine`,
-          {
+        this.gameAudit.event({
+          gameId: state.gameId,
+          round: state.round,
+          type: 'PLANNING_CONFIRMED',
+          phase: 'RESOLUTION',
+          step: 'planning_input',
+          playerId: p.id,
+          message: `${p.name}: akcje wejściowe do RoundEngine`,
+          payload: {
             profession: p.profession,
             buildConfirmed: step?.buildConfirmed ?? false,
             abilityConfirmed: step?.abilityConfirmed ?? false,
             buildActions: step?.buildActions ?? [],
-            abilityActionsBeforeInject: step?.abilityActions ?? [],
-            autoInjected,
-            combined,
+            abilityActions,
+            autoInjected: !!autoInjected,
+            skipped: false,
           },
-        );
+        });
       }
     } else {
-      ResolutionDebug.configure(state.gameId, state.round);
-      ResolutionDebug.log(
-        'RESOLUTION',
-        'planning_input',
-        'Brak planningSteps — używam istniejących pendingActions',
-        {
-          actions: Object.fromEntries([...state.pendingActions.entries()]),
+      this.gameAudit.event({
+        gameId: state.gameId,
+        round: state.round,
+        type: 'INVALID_ACTION',
+        phase: 'RESOLUTION',
+        step: 'planning_input',
+        message: 'Brak planningSteps — używam istniejących pendingActions',
+        payload: {
+          action: 'planning_input',
+          reason: 'missing_planning_steps_fallback',
         },
-      );
+      });
     }
-
-    this.logger.log(
-      `Rozpoczynam RESOLUTION gry ${gameId}, runda ${state.round}`,
-    );
 
     // Zapisz stan przed rozstrzygnięciem (dla narratora)
     const beforeState = JSON.parse(JSON.stringify(state));
@@ -781,7 +810,22 @@ export class GameService {
         if (action.cardId) {
           const cardIndex = player.cards.findIndex((c) => c.id === action.cardId);
           if (cardIndex !== -1) {
+            const removedCard = player.cards[cardIndex];
             player.cards.splice(cardIndex, 1);
+            this.gameAudit.event({
+              gameId: resolvedState.gameId,
+              round: resolvedState.round,
+              type: 'CARD_REMOVED',
+              phase: 'RESOLUTION',
+              step: 'card_used',
+              playerId: player.id,
+              message: `${player.name}: zużyto kartę ${removedCard.name}`,
+              payload: {
+                cardId: removedCard.id,
+                cardName: removedCard.name,
+                reason: 'used',
+              },
+            });
           }
         }
       });
@@ -791,6 +835,37 @@ export class GameService {
     if (resolvedState.spiedHands) {
       resolvedState.spiedHands.clear();
     }
+
+    // Punkty zwycięstwa po rozstrzygnięciu (spójne ze snapshotem END_ROUND)
+    resolvedState.players.forEach((player) => {
+      const buildingsValue = player.buildings.reduce(
+        (sum, b) => sum + b.value,
+        0,
+      );
+      this.gameAudit.event({
+        gameId: resolvedState.gameId,
+        round: resolvedState.round,
+        type: 'VICTORY_POINTS',
+        phase: 'RESOLUTION',
+        step: 'victory_points',
+        playerId: player.id,
+        message: `${player.name}: ${player.gold + buildingsValue} pkt (złoto ${player.gold} + budynki ${buildingsValue})`,
+        payload: {
+          points: player.gold + buildingsValue,
+          gold: player.gold,
+          buildingsValue,
+          buildingsCount: player.buildings.length,
+        },
+      });
+    });
+
+    this.gameAudit.snapshotState(
+      resolvedState.gameId,
+      resolvedState.round,
+      'RESOLUTION',
+      'END_ROUND',
+      resolvedState,
+    );
 
     // Generuj wydarzenia narratora
     const pendingActionsSnapshot = new Map(state.pendingActions);
@@ -889,9 +964,24 @@ export class GameService {
       this.resolutionSkippedByGame.set(gameId, true);
     }
 
+    // Numer właśnie zakończonej rundy (stan display'owy trzyma stary numer).
+    const finishedRound = instance.state.round;
+
     const finalState = this.cloneGameState(pending.resolvedState);
     (finalState as GameState & { narrativeEvents?: NarrativeEvent[] }).narrativeEvents =
       pending.narrativeEvents;
+
+    // Domknięcie audytu rundy: flush do SQLite + automatyczna walidacja.
+    this.gameAudit.endRound(
+      gameId,
+      finishedRound,
+      pending.resolvedState.taxedCategory ?? null,
+      finalState.winner ?? null,
+    );
+
+    if (finalState.phase === 'END') {
+      this.gameAudit.gameFinished(finalState, finishedRound);
+    }
 
     if (finalState.phase === 'PREP') {
       this.prepareRound(finalState);

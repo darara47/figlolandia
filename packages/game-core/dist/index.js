@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CATEGORY_COLORS = exports.HIDDEN_PROFESSIONS = exports.RoundEngine = exports.UI_ANIMATION_MS = exports.getResolutionAdvanceDelayMs = exports.getResolutionTurnDurationMs = exports.goldFloatTotalMs = exports.GOLD_FLOAT_MS = exports.RESOLUTION_TURN_GAP_MS = exports.RESOLUTION_PROFESSION_AT = exports.RESOLUTION_BUILD_AT = exports.RESOLUTION_TURN_MS = exports.isResolutionDebugEnabled = exports.ResolutionDebug = exports.PROFESSION_DATA = exports.BUILDING_DATA = void 0;
+exports.CATEGORY_COLORS = exports.HIDDEN_PROFESSIONS = exports.RoundEngine = exports.UI_ANIMATION_MS = exports.getResolutionAdvanceDelayMs = exports.getResolutionTurnDurationMs = exports.goldFloatTotalMs = exports.GOLD_FLOAT_MS = exports.RESOLUTION_TURN_GAP_MS = exports.RESOLUTION_PROFESSION_AT = exports.RESOLUTION_BUILD_AT = exports.RESOLUTION_TURN_MS = exports.AuditEmitter = exports.PROFESSION_DATA = exports.BUILDING_DATA = void 0;
 exports.generateGameId = generateGameId;
 exports.generatePlayerId = generatePlayerId;
 exports.generateGamePin = generateGamePin;
@@ -64,10 +64,9 @@ exports.PROFESSION_DATA = {
     diplomat: { name: 'Dyplomata', category: 'Władza / Obrona' },
     inspector: { name: 'Inspektor', category: 'Władza / Obrona' },
 };
-const resolution_debug_1 = require("./resolution-debug");
-var resolution_debug_2 = require("./resolution-debug");
-Object.defineProperty(exports, "ResolutionDebug", { enumerable: true, get: function () { return resolution_debug_2.ResolutionDebug; } });
-Object.defineProperty(exports, "isResolutionDebugEnabled", { enumerable: true, get: function () { return resolution_debug_2.isResolutionDebugEnabled; } });
+const emitter_1 = require("./audit/emitter");
+var emitter_2 = require("./audit/emitter");
+Object.defineProperty(exports, "AuditEmitter", { enumerable: true, get: function () { return emitter_2.AuditEmitter; } });
 var animationTiming_1 = require("./animationTiming");
 Object.defineProperty(exports, "RESOLUTION_TURN_MS", { enumerable: true, get: function () { return animationTiming_1.RESOLUTION_TURN_MS; } });
 Object.defineProperty(exports, "RESOLUTION_BUILD_AT", { enumerable: true, get: function () { return animationTiming_1.RESOLUTION_BUILD_AT; } });
@@ -89,22 +88,27 @@ class RoundEngine {
         const players = [...newState.players];
         // Sortuj graczy według kolejności rozstrzygania
         const sortedPlayers = [...players].sort((a, b) => a.order - b.order);
-        resolution_debug_1.ResolutionDebug.configure(state.gameId, state.round);
-        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'start', `Rozpoczęcie rozstrzygania rundy ${state.round}`, {
-            players: sortedPlayers.map((p) => ({
-                id: p.id,
-                name: p.name,
-                profession: p.profession,
-                gold: p.gold,
-                order: p.order,
-                deferredBuilds: p.deferredBuildActions.length,
-            })),
-            actions: Object.fromEntries([...actions.entries()].map(([playerId, playerActions]) => [
-                playerId,
-                playerActions,
-            ])),
+        emitter_1.AuditEmitter.configure(state.gameId, state.round);
+        emitter_1.AuditEmitter.event({
+            type: 'RESOLUTION_STARTED',
+            phase: 'RESOLUTION',
+            step: 'start',
+            message: `Rozpoczęcie rozstrzygania rundy ${state.round}`,
+            payload: {
+                players: sortedPlayers.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    profession: p.profession,
+                    gold: p.gold,
+                    order: p.order,
+                    deferredBuilds: p.deferredBuildActions.length,
+                })),
+                actions: Object.fromEntries([...actions.entries()].map(([playerId, playerActions]) => [
+                    playerId,
+                    playerActions,
+                ])),
+            },
         });
-        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'start', sortedPlayers);
         // Reset flag bieżącej rundy (deferredBuildActions przetrwa do wykonania w kroku budowy)
         sortedPlayers.forEach((p) => {
             p.professionAbilityUsed = false;
@@ -117,34 +121,55 @@ class RoundEngine {
         // Uwaga: Zdarzenia losowe są teraz rozstrzygane w fazie PREP, przed PLANNING
         // 2. Zdolności zawodowe (Polityk → Dyplomata → Sabotażysta → reszta)
         this.applyProfessionAbilities(sortedPlayers, actions, newState);
-        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_abilities', sortedPlayers);
+        emitter_1.AuditEmitter.snapshot({
+            phase: 'RESOLUTION',
+            label: 'AFTER_ABILITIES',
+            state: { ...newState, players: sortedPlayers },
+        });
         // 3. Niszczenie budynków
         this.resolveDestruction(sortedPlayers, actions, newState);
         // 4. Budowy
         this.resolveBuildings(sortedPlayers, actions, newState);
-        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_builds', sortedPlayers);
+        emitter_1.AuditEmitter.snapshot({
+            phase: 'RESOLUTION',
+            label: 'AFTER_BUILD',
+            state: { ...newState, players: sortedPlayers },
+        });
         // 5. Kradzieże (Złodziej — po budowach, żeby cel najpierw wydał złoto na budowę)
         this.resolveTheft(sortedPlayers, actions, newState);
-        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_theft', sortedPlayers);
+        emitter_1.AuditEmitter.snapshot({
+            phase: 'RESOLUTION',
+            label: 'AFTER_THEFT',
+            state: { ...newState, players: sortedPlayers },
+        });
         // 6. Zastosuj efekty końcowe zawodów (np. Księgowy)
         this.applyEndOfRoundAbilities(sortedPlayers, newState);
-        resolution_debug_1.ResolutionDebug.logGoldSnapshot('RESOLUTION', 'after_end_abilities', sortedPlayers);
-        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'flags', 'Stan flag po rozstrzygnięciu', {
-            players: sortedPlayers.map((p) => ({
-                id: p.id,
-                name: p.name,
-                profession: p.profession,
-                professionAbilityUsed: p.professionAbilityUsed,
-                protected: p.protected,
-                delayedBuildings: p.delayedBuildings,
-                urbanistPendingBuildBoost: p.urbanistPendingBuildBoost,
-                deferredBuildActions: p.deferredBuildActions.length,
-                buildingsBuiltThisRound: p.buildingsBuiltThisRound,
-            })),
-            taxedCategory: newState.taxedCategory,
+        emitter_1.AuditEmitter.snapshot({
+            phase: 'RESOLUTION',
+            label: 'AFTER_END_ABILITIES',
+            state: { ...newState, players: sortedPlayers },
+        });
+        emitter_1.AuditEmitter.event({
+            type: 'RESOLUTION_FLAGS',
+            phase: 'RESOLUTION',
+            step: 'flags',
+            message: 'Stan flag po rozstrzygnięciu',
+            payload: {
+                players: sortedPlayers.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    profession: p.profession,
+                    professionAbilityUsed: p.professionAbilityUsed,
+                    protected: p.protected,
+                    delayedBuildings: p.delayedBuildings,
+                    urbanistPendingBuildBoost: p.urbanistPendingBuildBoost,
+                    deferredBuildActions: p.deferredBuildActions.length,
+                    buildingsBuiltThisRound: p.buildingsBuiltThisRound,
+                })),
+                taxedCategory: newState.taxedCategory ?? null,
+            },
         });
         newState.players = sortedPlayers;
-        resolution_debug_1.ResolutionDebug.flushSummary(`RESOLUTION round ${state.round}`);
         return newState;
     }
     /**
@@ -163,10 +188,36 @@ class RoundEngine {
             if (politicianAction?.taxedCategory) {
                 state.taxedCategory = politicianAction.taxedCategory;
                 politicianPlayer.professionAbilityUsed = true;
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.politician', `${politicianPlayer.name}: opodatkowana kategoria = ${politicianAction.taxedCategory}`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_USED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.politician',
+                    playerId: politicianPlayer.id,
+                    message: `${politicianPlayer.name}: opodatkowana kategoria = ${politicianAction.taxedCategory}`,
+                    payload: {
+                        profession: 'politician',
+                        taxedCategory: politicianAction.taxedCategory,
+                        effect: 'tax_category_set',
+                    },
+                });
+                emitter_1.AuditEmitter.event({
+                    type: 'TAX_CATEGORY_SET',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.politician',
+                    playerId: politicianPlayer.id,
+                    message: `Opodatkowana kategoria: ${politicianAction.taxedCategory}`,
+                    payload: { taxedCategory: politicianAction.taxedCategory },
+                });
             }
             else {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.politician', `${politicianPlayer.name}: brak akcji lub brak taxedCategory — pominięto`, { action: politicianAction ?? null });
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.politician',
+                    playerId: politicianPlayer.id,
+                    message: `${politicianPlayer.name}: brak akcji lub brak taxedCategory — pominięto`,
+                    payload: { profession: 'politician', reason: 'no_action_or_category' },
+                });
             }
         }
         // 2. Dyplomata — najwyższy priorytet obrony
@@ -175,12 +226,34 @@ class RoundEngine {
                 continue;
             const professionAction = findProfessionAction(player.id);
             if (!professionAction) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.diplomat', `${player.name}: brak akcji use_profession — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.diplomat',
+                    playerId: player.id,
+                    message: `${player.name}: brak akcji use_profession — pominięto`,
+                    payload: { profession: 'diplomat', reason: 'no_action' },
+                });
                 continue;
             }
             player.protected = true;
             player.professionAbilityUsed = true;
-            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.diplomat', `${player.name}: protected=true`);
+            emitter_1.AuditEmitter.event({
+                type: 'PROFESSION_USED',
+                phase: 'RESOLUTION',
+                step: 'abilities.diplomat',
+                playerId: player.id,
+                message: `${player.name}: protected=true`,
+                payload: { profession: 'diplomat', effect: 'protection' },
+            });
+            emitter_1.AuditEmitter.event({
+                type: 'PROTECTION',
+                phase: 'RESOLUTION',
+                step: 'abilities.diplomat',
+                playerId: player.id,
+                message: `${player.name} jest chroniony w tej rundzie`,
+                payload: { profession: 'diplomat' },
+            });
         }
         // 3. Sabotażysta — blokuje zdolność zawodową celu
         for (const player of players) {
@@ -188,16 +261,46 @@ class RoundEngine {
                 continue;
             const professionAction = findProfessionAction(player.id);
             if (!professionAction?.target) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.saboteur', `${player.name}: brak celu — pominięto`, { action: professionAction ?? null });
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.saboteur',
+                    playerId: player.id,
+                    message: `${player.name}: brak celu — pominięto`,
+                    payload: { profession: 'saboteur', reason: 'no_target' },
+                });
                 continue;
             }
             const target = players.find((p) => p.id === professionAction.target);
             if (target && !target.protected) {
                 target.professionAbilityUsed = true;
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.saboteur', `${player.name} → ${target.name}: professionAbilityUsed=true (cel zablokowany)`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_USED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.saboteur',
+                    playerId: player.id,
+                    message: `${player.name} → ${target.name}: professionAbilityUsed=true (cel zablokowany)`,
+                    payload: {
+                        profession: 'saboteur',
+                        targetId: target.id,
+                        targetName: target.name,
+                        effect: 'target_blocked',
+                    },
+                });
             }
             else {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.saboteur', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony (protected)'} — brak blokady`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_USED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.saboteur',
+                    playerId: player.id,
+                    message: `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony (protected)'} — brak blokady`,
+                    payload: {
+                        profession: 'saboteur',
+                        targetId: professionAction.target,
+                        effect: !target ? 'target_missing' : 'target_protected',
+                    },
+                });
             }
             player.professionAbilityUsed = true;
         }
@@ -210,13 +313,27 @@ class RoundEngine {
                 if (player.profession &&
                     !['politician', 'diplomat', 'saboteur'].includes(player.profession) &&
                     player.professionAbilityUsed) {
-                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.skip', `${player.name} (${player.profession}): pominięto — professionAbilityUsed=true (np. przez Sabotażystę)`);
+                    emitter_1.AuditEmitter.event({
+                        type: 'PROFESSION_SKIPPED',
+                        phase: 'RESOLUTION',
+                        step: 'abilities.skip',
+                        playerId: player.id,
+                        message: `${player.name} (${player.profession}): pominięto — professionAbilityUsed=true (np. przez Sabotażystę)`,
+                        payload: { profession: player.profession, reason: 'ability_blocked' },
+                    });
                 }
                 continue;
             }
             const professionAction = findProfessionAction(player.id);
             if (!professionAction || !player.profession) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.skip', `${player.name} (${player.profession ?? 'brak'}): brak akcji use_profession — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'abilities.skip',
+                    playerId: player.id,
+                    message: `${player.name} (${player.profession ?? 'brak'}): brak akcji use_profession — pominięto`,
+                    payload: { profession: player.profession ?? null, reason: 'no_action' },
+                });
                 continue;
             }
             switch (player.profession) {
@@ -224,7 +341,16 @@ class RoundEngine {
                     const goldBefore = player.gold;
                     player.gold += 2;
                     player.luckyGoldGranted = 2;
-                    resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'abilities.lucky', player, goldBefore, player.gold);
+                    emitter_1.AuditEmitter.goldChange({
+                        type: 'PROFESSION_USED',
+                        phase: 'RESOLUTION',
+                        step: 'abilities.lucky',
+                        player,
+                        before: goldBefore,
+                        after: player.gold,
+                        reason: 'lucky_bonus',
+                        payload: { profession: 'lucky', effect: 'gold_bonus' },
+                    });
                     break;
                 }
                 case 'inspector':
@@ -232,14 +358,56 @@ class RoundEngine {
                         const target = players.find((p) => p.id === professionAction.target);
                         if (target && !target.protected) {
                             target.delayedBuildings = true;
-                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.inspector', `${player.name} → ${target.name}: delayedBuildings=true`);
+                            emitter_1.AuditEmitter.event({
+                                type: 'PROFESSION_USED',
+                                phase: 'RESOLUTION',
+                                step: 'abilities.inspector',
+                                playerId: player.id,
+                                message: `${player.name} → ${target.name}: delayedBuildings=true`,
+                                payload: {
+                                    profession: 'inspector',
+                                    targetId: target.id,
+                                    targetName: target.name,
+                                    effect: 'buildings_delayed',
+                                },
+                            });
+                            emitter_1.AuditEmitter.event({
+                                type: 'DELAYED_BUILD',
+                                phase: 'RESOLUTION',
+                                step: 'abilities.inspector',
+                                playerId: target.id,
+                                message: `Budowy gracza ${target.name} opóźnione przez Inspektora`,
+                                payload: {
+                                    targetId: target.id,
+                                    targetName: target.name,
+                                    kind: 'inspector_delay',
+                                },
+                            });
                         }
                         else {
-                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.inspector', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — brak opóźnienia`);
+                            emitter_1.AuditEmitter.event({
+                                type: 'PROFESSION_USED',
+                                phase: 'RESOLUTION',
+                                step: 'abilities.inspector',
+                                playerId: player.id,
+                                message: `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — brak opóźnienia`,
+                                payload: {
+                                    profession: 'inspector',
+                                    targetId: professionAction.target,
+                                    effect: !target ? 'target_missing' : 'target_protected',
+                                },
+                            });
                         }
                     }
                     else {
-                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.inspector', `${player.name}: brak celu — pominięto`);
+                        emitter_1.AuditEmitter.event({
+                            type: 'PROFESSION_SKIPPED',
+                            phase: 'RESOLUTION',
+                            step: 'abilities.inspector',
+                            playerId: player.id,
+                            message: `${player.name}: brak celu — pominięto`,
+                            payload: { profession: 'inspector', reason: 'no_target' },
+                        });
                     }
                     break;
                 case 'spy':
@@ -250,10 +418,34 @@ class RoundEngine {
                                 state.spiedHands = new Map();
                             }
                             state.spiedHands.set(player.id, target.cards.map((card) => ({ ...card })));
-                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.spy', `${player.name} → ${target.name}: podgląd ${target.cards.length} kart`);
+                            emitter_1.AuditEmitter.event({
+                                type: 'PROFESSION_USED',
+                                phase: 'RESOLUTION',
+                                step: 'abilities.spy',
+                                playerId: player.id,
+                                message: `${player.name} → ${target.name}: podgląd ${target.cards.length} kart`,
+                                payload: {
+                                    profession: 'spy',
+                                    targetId: target.id,
+                                    targetName: target.name,
+                                    cardsSeen: target.cards.length,
+                                    effect: 'hand_peeked',
+                                },
+                            });
                         }
                         else {
-                            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.spy', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — pominięto`);
+                            emitter_1.AuditEmitter.event({
+                                type: 'PROFESSION_USED',
+                                phase: 'RESOLUTION',
+                                step: 'abilities.spy',
+                                playerId: player.id,
+                                message: `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — pominięto`,
+                                payload: {
+                                    profession: 'spy',
+                                    targetId: professionAction.target,
+                                    effect: !target ? 'target_missing' : 'target_protected',
+                                },
+                            });
                         }
                     }
                     break;
@@ -262,15 +454,49 @@ class RoundEngine {
                         const lowestBuilding = player.buildings.reduce((lowest, current) => current.value < lowest.value ? current : lowest);
                         const valueBefore = lowestBuilding.value;
                         lowestBuilding.value = Math.min(5, lowestBuilding.value + 1);
-                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.urbanist', `${player.name}: ${lowestBuilding.type} wartość ${valueBefore}→${lowestBuilding.value}`);
+                        emitter_1.AuditEmitter.event({
+                            type: 'PROFESSION_USED',
+                            phase: 'RESOLUTION',
+                            step: 'abilities.urbanist',
+                            playerId: player.id,
+                            message: `${player.name}: ${lowestBuilding.type} wartość ${valueBefore}→${lowestBuilding.value}`,
+                            payload: {
+                                profession: 'urbanist',
+                                buildingId: lowestBuilding.id,
+                                buildingType: lowestBuilding.type,
+                                valueBefore,
+                                valueAfter: lowestBuilding.value,
+                                effect: 'building_value_increased',
+                            },
+                        });
                     }
                     else {
                         player.urbanistPendingBuildBoost = true;
-                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.urbanist', `${player.name}: brak budynków — urbanistPendingBuildBoost=true`);
+                        emitter_1.AuditEmitter.event({
+                            type: 'PROFESSION_USED',
+                            phase: 'RESOLUTION',
+                            step: 'abilities.urbanist',
+                            playerId: player.id,
+                            message: `${player.name}: brak budynków — urbanistPendingBuildBoost=true`,
+                            payload: {
+                                profession: 'urbanist',
+                                effect: 'pending_build_boost',
+                            },
+                        });
                     }
                     break;
                 default:
-                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'abilities.other', `${player.name} (${player.profession}): zdolność rozstrzygana w innym kroku`);
+                    emitter_1.AuditEmitter.event({
+                        type: 'PROFESSION_SKIPPED',
+                        phase: 'RESOLUTION',
+                        step: 'abilities.other',
+                        playerId: player.id,
+                        message: `${player.name} (${player.profession}): zdolność rozstrzygana w innym kroku`,
+                        payload: {
+                            profession: player.profession,
+                            reason: 'resolved_in_other_step',
+                        },
+                    });
                     break;
             }
             player.professionAbilityUsed = true;
@@ -289,10 +515,26 @@ class RoundEngine {
                     if (player.gold < 2) {
                         const goldBefore = player.gold;
                         player.gold += 2;
-                        resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'end.accountant', player, goldBefore, player.gold);
+                        emitter_1.AuditEmitter.goldChange({
+                            type: 'PROFESSION_USED',
+                            phase: 'RESOLUTION',
+                            step: 'end.accountant',
+                            player,
+                            before: goldBefore,
+                            after: player.gold,
+                            reason: 'accountant_bonus',
+                            payload: { profession: 'accountant', effect: 'low_gold_bonus' },
+                        });
                     }
                     else {
-                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'end.accountant', `${player.name}: gold=${player.gold} (>=2) — brak bonusu`);
+                        emitter_1.AuditEmitter.event({
+                            type: 'PROFESSION_SKIPPED',
+                            phase: 'RESOLUTION',
+                            step: 'end.accountant',
+                            playerId: player.id,
+                            message: `${player.name}: gold=${player.gold} (>=2) — brak bonusu`,
+                            payload: { profession: 'accountant', reason: 'gold_above_threshold' },
+                        });
                     }
                     break;
             }
@@ -311,14 +553,29 @@ class RoundEngine {
         const roll = rng.random();
         const threshold = state.config.eventFrequency / 100;
         if (roll >= threshold) {
-            resolution_debug_1.ResolutionDebug.log('PREP', 'random_event', `Brak zdarzenia losowego (roll=${roll.toFixed(4)}, threshold=${threshold})`);
+            emitter_1.AuditEmitter.event({
+                type: 'RANDOM_EVENT',
+                phase: 'PREP',
+                step: 'random_event',
+                message: `Brak zdarzenia losowego (roll=${roll.toFixed(4)}, threshold=${threshold})`,
+                payload: { roll, threshold, bonus: null },
+            });
             return;
         }
         const randomPlayer = rng.randomChoice(players);
         const bonus = rng.randomInt(1, 3);
         const goldBefore = randomPlayer.gold;
         randomPlayer.gold += bonus;
-        resolution_debug_1.ResolutionDebug.logGoldChange('PREP', 'random_event', randomPlayer, goldBefore, randomPlayer.gold, { roll, threshold, bonus });
+        emitter_1.AuditEmitter.goldChange({
+            type: 'RANDOM_EVENT',
+            phase: 'PREP',
+            step: 'random_event',
+            player: randomPlayer,
+            before: goldBefore,
+            after: randomPlayer.gold,
+            reason: 'random_event',
+            payload: { roll, threshold, bonus },
+        });
     }
     static resolveBuildings(players, actions, state) {
         const politicianPlayer = players.find((p) => p.profession === 'politician');
@@ -326,7 +583,19 @@ class RoundEngine {
         for (const player of players) {
             if (player.deferredBuildActions.length === 0)
                 continue;
-            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.deferred', `${player.name}: wykonuję ${player.deferredBuildActions.length} odłożonych budów`, { actions: player.deferredBuildActions });
+            emitter_1.AuditEmitter.event({
+                type: 'DELAYED_BUILD',
+                phase: 'RESOLUTION',
+                step: 'build.deferred',
+                playerId: player.id,
+                message: `${player.name}: wykonuję ${player.deferredBuildActions.length} odłożonych budów`,
+                payload: {
+                    targetId: player.id,
+                    targetName: player.name,
+                    count: player.deferredBuildActions.length,
+                    kind: 'deferred_execution',
+                },
+            });
             this.executeBuildActions(player, player.deferredBuildActions, state, politicianPlayer, 'deferred');
             player.deferredBuildActions = [];
         }
@@ -354,7 +623,19 @@ class RoundEngine {
                     if (lastBuilding && architectAction.buildingCategory) {
                         const oldCategory = lastBuilding.category;
                         lastBuilding.category = architectAction.buildingCategory;
-                        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.architect', `${player.name}: ${lastBuilding.type} kategoria ${oldCategory}→${architectAction.buildingCategory}`);
+                        emitter_1.AuditEmitter.event({
+                            type: 'PROFESSION_USED',
+                            phase: 'RESOLUTION',
+                            step: 'build.architect',
+                            playerId: player.id,
+                            message: `${player.name}: ${lastBuilding.type} kategoria ${oldCategory}→${architectAction.buildingCategory}`,
+                            payload: {
+                                profession: 'architect',
+                                buildingId: lastBuilding.id,
+                                buildingType: lastBuilding.type,
+                                effect: `category_changed:${oldCategory}->${architectAction.buildingCategory}`,
+                            },
+                        });
                     }
                 }
             }
@@ -379,25 +660,59 @@ class RoundEngine {
             cost = Math.max(0, cost - 2);
         }
         if (player.gold < cost) {
-            const skipMessage = `[RoundEngine] Budowa opóźniona pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
+            const skipMessage = `Budowa opóźniona pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
                 `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
-            console.warn(skipMessage);
-            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.delayed.skip', skipMessage, {
-                baseValue,
-                cost,
-                profession: buildProfession,
+            emitter_1.AuditEmitter.event({
+                type: 'BUILD_SKIPPED',
+                phase: 'RESOLUTION',
+                step: 'build.delayed.skip',
+                playerId: player.id,
+                message: skipMessage,
+                payload: {
+                    buildingType: buildAction.buildingType,
+                    baseValue,
+                    cost,
+                    gold: player.gold,
+                    profession: buildProfession,
+                    source: 'delayed',
+                    reason: 'insufficient_gold',
+                },
             });
             return;
         }
         const goldBefore = player.gold;
         player.gold -= cost;
-        resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'build.delayed.cost', player, goldBefore, player.gold, {
+        const buildingId = `building-${Date.now()}-${Math.random()}`;
+        const startedPayload = {
+            buildingId,
             buildingType: buildAction.buildingType,
+            buildingCategory: buildingData.category,
             baseValue,
             cost,
             opportunityHunter: opportunityHunterDiscount,
-        });
-        const buildingId = `building-${Date.now()}-${Math.random()}`;
+        };
+        if (cost > 0) {
+            emitter_1.AuditEmitter.goldChange({
+                type: 'BUILDING_STARTED',
+                phase: 'RESOLUTION',
+                step: 'build.delayed.cost',
+                player,
+                before: goldBefore,
+                after: player.gold,
+                reason: 'delayed_build_cost',
+                payload: startedPayload,
+            });
+        }
+        else {
+            emitter_1.AuditEmitter.event({
+                type: 'BUILDING_STARTED',
+                phase: 'RESOLUTION',
+                step: 'build.delayed.cost',
+                playerId: player.id,
+                message: `${player.name}: rozpoczęto budowę ${buildAction.buildingType} (koszt=0)`,
+                payload: startedPayload,
+            });
+        }
         player.buildings.push({
             id: buildingId,
             type: buildAction.buildingType,
@@ -410,7 +725,21 @@ class RoundEngine {
             buildingId,
             plannedProfession: player.profession ?? undefined,
         });
-        resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.delayed', `${player.name}: opóźniono budowę ${buildAction.buildingType} (pending, koszt=${cost})`, { buildingId, cost });
+        emitter_1.AuditEmitter.event({
+            type: 'DELAYED_BUILD',
+            phase: 'RESOLUTION',
+            step: 'build.delayed',
+            playerId: player.id,
+            message: `${player.name}: opóźniono budowę ${buildAction.buildingType} (pending, koszt=${cost})`,
+            payload: {
+                targetId: player.id,
+                targetName: player.name,
+                buildingId,
+                buildingType: buildAction.buildingType,
+                cost,
+                kind: 'build_deferred',
+            },
+        });
     }
     static executeBuildActions(player, buildActions, state, politicianPlayer, source) {
         for (const buildAction of buildActions) {
@@ -422,7 +751,19 @@ class RoundEngine {
             if (source === 'deferred' && buildAction.buildingId) {
                 const pendingBuilding = player.buildings.find((b) => b.id === buildAction.buildingId && b.pending);
                 if (!pendingBuilding) {
-                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.deferred.skip', `${player.name}: brak pending budynku ${buildAction.buildingId}`);
+                    emitter_1.AuditEmitter.event({
+                        type: 'BUILD_SKIPPED',
+                        phase: 'RESOLUTION',
+                        step: 'build.deferred.skip',
+                        playerId: player.id,
+                        message: `${player.name}: brak pending budynku ${buildAction.buildingId}`,
+                        payload: {
+                            buildingType: buildAction.buildingType ?? null,
+                            buildingId: buildAction.buildingId,
+                            source: 'deferred',
+                            reason: 'pending_building_missing',
+                        },
+                    });
                     continue;
                 }
                 const card = buildAction.cardId
@@ -432,24 +773,65 @@ class RoundEngine {
                     (card ? card.buildingValue : null) ||
                     buildingData.valueRange[0];
                 let buildingValue = baseValue;
+                let urbanistBoost = false;
                 if (player.urbanistPendingBuildBoost && player.buildingsBuiltThisRound === 0) {
                     buildingValue = Math.min(5, buildingValue + 1);
                     player.urbanistPendingBuildBoost = false;
-                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.urbanist_boost', `${player.name}: +1 wartość odłożonego budynku (${baseValue}→${buildingValue})`);
+                    urbanistBoost = true;
+                    emitter_1.AuditEmitter.event({
+                        type: 'BUILD_BOOSTED',
+                        phase: 'RESOLUTION',
+                        step: 'build.urbanist_boost',
+                        playerId: player.id,
+                        message: `${player.name}: +1 wartość odłożonego budynku (${baseValue}→${buildingValue})`,
+                        payload: {
+                            buildingType: buildAction.buildingType,
+                            valueBefore: baseValue,
+                            valueAfter: buildingValue,
+                            source: 'deferred',
+                        },
+                    });
                 }
                 pendingBuilding.value = buildingValue;
                 pendingBuilding.pending = false;
                 player.buildingsBuiltThisRound++;
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', `build.success.${source}`, `${player.name}: ukończono odłożony ${buildAction.buildingType} (wartość=${buildingValue})`);
+                emitter_1.AuditEmitter.event({
+                    type: 'BUILDING_FINISHED',
+                    phase: 'RESOLUTION',
+                    step: `build.success.${source}`,
+                    playerId: player.id,
+                    message: `${player.name}: ukończono odłożony ${buildAction.buildingType} (wartość=${buildingValue})`,
+                    payload: {
+                        buildingId: pendingBuilding.id,
+                        buildingType: buildAction.buildingType,
+                        buildingCategory: buildingData.category,
+                        value: buildingValue,
+                        baseValue,
+                        cost: 0,
+                        opportunityHunter: false,
+                        urbanistBoost,
+                        source: 'deferred',
+                    },
+                });
                 if (politicianPlayer &&
                     player.id !== politicianPlayer.id &&
                     state.taxedCategory === buildingData.category) {
                     const politicianGoldBefore = politicianPlayer.gold;
                     politicianPlayer.gold += 1;
-                    resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'build.politician_tax', politicianPlayer, politicianGoldBefore, politicianPlayer.gold, {
-                        builder: player.name,
-                        buildingType: buildAction.buildingType,
-                        taxedCategory: state.taxedCategory,
+                    emitter_1.AuditEmitter.goldChange({
+                        type: 'TAX_APPLIED',
+                        phase: 'RESOLUTION',
+                        step: 'build.politician_tax',
+                        player: politicianPlayer,
+                        before: politicianGoldBefore,
+                        after: politicianPlayer.gold,
+                        reason: 'politician_tax',
+                        payload: {
+                            builderId: player.id,
+                            builderName: player.name,
+                            buildingType: buildAction.buildingType,
+                            taxedCategory: state.taxedCategory,
+                        },
                     });
                 }
                 continue;
@@ -467,27 +849,47 @@ class RoundEngine {
                 cost = Math.max(0, cost - 2);
             }
             if (player.gold < cost) {
-                const skipMessage = `[RoundEngine] Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
+                const skipMessage = `Budowa pominięta: gracz ${player.name} (${player.id}) próbował wybudować ` +
                     `"${buildAction.buildingType}" za ${cost} złota, ale ma tylko ${player.gold}.`;
-                console.warn(skipMessage);
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.skip', skipMessage, { source, baseValue, cost, profession: buildProfession });
+                emitter_1.AuditEmitter.event({
+                    type: 'BUILD_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'build.skip',
+                    playerId: player.id,
+                    message: skipMessage,
+                    payload: {
+                        buildingType: buildAction.buildingType,
+                        baseValue,
+                        cost,
+                        gold: player.gold,
+                        profession: buildProfession ?? null,
+                        source,
+                        reason: 'insufficient_gold',
+                    },
+                });
                 continue;
             }
             const goldBefore = player.gold;
             player.gold -= cost;
-            resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', `build.cost.${source}`, player, goldBefore, player.gold, {
-                buildingType: buildAction.buildingType,
-                baseValue,
-                cost,
-                opportunityHunter: opportunityHunterDiscount,
-                professionAbilityBlocked: player.professionAbilityUsed,
-                plannedProfession: buildAction.plannedProfession,
-            });
             let buildingValue = baseValue;
+            let urbanistBoost = false;
             if (player.urbanistPendingBuildBoost && player.buildingsBuiltThisRound === 0) {
                 buildingValue = Math.min(5, buildingValue + 1);
                 player.urbanistPendingBuildBoost = false;
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'build.urbanist_boost', `${player.name}: +1 wartość pierwszego budynku w rundzie (${baseValue}→${buildingValue})`);
+                urbanistBoost = true;
+                emitter_1.AuditEmitter.event({
+                    type: 'BUILD_BOOSTED',
+                    phase: 'RESOLUTION',
+                    step: 'build.urbanist_boost',
+                    playerId: player.id,
+                    message: `${player.name}: +1 wartość pierwszego budynku w rundzie (${baseValue}→${buildingValue})`,
+                    payload: {
+                        buildingType: buildAction.buildingType,
+                        valueBefore: baseValue,
+                        valueAfter: buildingValue,
+                        source,
+                    },
+                });
             }
             const buildingId = `building-${Date.now()}-${Math.random()}`;
             player.buildings.push({
@@ -497,16 +899,60 @@ class RoundEngine {
                 value: buildingValue,
             });
             player.buildingsBuiltThisRound++;
-            resolution_debug_1.ResolutionDebug.log('RESOLUTION', `build.success.${source}`, `${player.name}: wybudowano ${buildAction.buildingType} (wartość=${buildingValue}, kategoria=${buildingData.category})`);
+            const finishedPayload = {
+                buildingId,
+                buildingType: buildAction.buildingType,
+                buildingCategory: buildingData.category,
+                value: buildingValue,
+                baseValue,
+                cost,
+                opportunityHunter: opportunityHunterDiscount,
+                urbanistBoost,
+                source,
+            };
+            const finishedMessage = `${player.name}: wybudowano ${buildAction.buildingType} (wartość=${buildingValue}, kategoria=${buildingData.category})`;
+            if (cost > 0) {
+                emitter_1.AuditEmitter.goldChange({
+                    type: 'BUILDING_FINISHED',
+                    phase: 'RESOLUTION',
+                    step: `build.cost.${source}`,
+                    player,
+                    before: goldBefore,
+                    after: player.gold,
+                    reason: 'build_cost',
+                    message: finishedMessage,
+                    payload: finishedPayload,
+                });
+            }
+            else {
+                emitter_1.AuditEmitter.event({
+                    type: 'BUILDING_FINISHED',
+                    phase: 'RESOLUTION',
+                    step: `build.success.${source}`,
+                    playerId: player.id,
+                    message: finishedMessage,
+                    payload: finishedPayload,
+                });
+            }
             if (politicianPlayer &&
                 player.id !== politicianPlayer.id &&
                 state.taxedCategory === buildingData.category) {
                 const politicianGoldBefore = politicianPlayer.gold;
                 politicianPlayer.gold += 1;
-                resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'build.politician_tax', politicianPlayer, politicianGoldBefore, politicianPlayer.gold, {
-                    builder: player.name,
-                    buildingType: buildAction.buildingType,
-                    taxedCategory: state.taxedCategory,
+                emitter_1.AuditEmitter.goldChange({
+                    type: 'TAX_APPLIED',
+                    phase: 'RESOLUTION',
+                    step: 'build.politician_tax',
+                    player: politicianPlayer,
+                    before: politicianGoldBefore,
+                    after: politicianPlayer.gold,
+                    reason: 'politician_tax',
+                    payload: {
+                        builderId: player.id,
+                        builderName: player.name,
+                        buildingType: buildAction.buildingType,
+                        taxedCategory: state.taxedCategory,
+                    },
                 });
             }
         }
@@ -517,18 +963,43 @@ class RoundEngine {
             if (player.profession !== 'thief')
                 continue;
             if (player.professionAbilityUsed) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.skip', `${player.name}: zablokowany przez Sabotażystę — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'theft.skip',
+                    playerId: player.id,
+                    message: `${player.name}: zablokowany przez Sabotażystę — pominięto`,
+                    payload: { profession: 'thief', reason: 'ability_blocked' },
+                });
                 continue;
             }
             const playerActions = actions.get(player.id) || [];
             const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
             if (!professionAction || !professionAction.target) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.skip', `${player.name}: brak akcji lub celu — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'theft.skip',
+                    playerId: player.id,
+                    message: `${player.name}: brak akcji lub celu — pominięto`,
+                    payload: { profession: 'thief', reason: 'no_action_or_target' },
+                });
                 continue;
             }
             const target = players.find((p) => p.id === professionAction.target);
             if (!target || target.protected) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.skip', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'theft.skip',
+                    playerId: player.id,
+                    message: `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : 'jest chroniony'} — pominięto`,
+                    payload: {
+                        profession: 'thief',
+                        reason: !target ? 'target_missing' : 'target_protected',
+                        targetId: professionAction.target,
+                    },
+                });
                 continue;
             }
             if (professionAction.theftTarget === 'gold') {
@@ -537,17 +1008,105 @@ class RoundEngine {
                 const thiefGoldBefore = player.gold;
                 target.gold -= stolen;
                 player.gold += stolen;
-                resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'theft.gold', target, targetGoldBefore, target.gold, { thief: player.name, stolen });
-                resolution_debug_1.ResolutionDebug.logGoldChange('RESOLUTION', 'theft.gold', player, thiefGoldBefore, player.gold, { target: target.name, stolen });
+                emitter_1.AuditEmitter.goldChange({
+                    type: 'THEFT',
+                    phase: 'RESOLUTION',
+                    step: 'theft.gold',
+                    player: target,
+                    before: targetGoldBefore,
+                    after: target.gold,
+                    reason: 'theft_gold_victim',
+                    payload: {
+                        mode: 'gold',
+                        thiefId: player.id,
+                        thiefName: player.name,
+                        victimId: target.id,
+                        victimName: target.name,
+                        amount: stolen,
+                        role: 'victim',
+                    },
+                });
+                emitter_1.AuditEmitter.goldChange({
+                    type: 'THEFT',
+                    phase: 'RESOLUTION',
+                    step: 'theft.gold',
+                    player,
+                    before: thiefGoldBefore,
+                    after: player.gold,
+                    reason: 'theft_gold_thief',
+                    payload: {
+                        mode: 'gold',
+                        thiefId: player.id,
+                        thiefName: player.name,
+                        victimId: target.id,
+                        victimName: target.name,
+                        amount: stolen,
+                        role: 'thief',
+                    },
+                });
             }
             else if (professionAction.theftTarget === 'card') {
                 if (target.cards.length > 0) {
                     const stolenCard = target.cards.pop();
                     player.cards.push(stolenCard);
-                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.card', `${player.name} → ${target.name}: skradziono kartę ${stolenCard.name}`);
+                    emitter_1.AuditEmitter.event({
+                        type: 'THEFT',
+                        phase: 'RESOLUTION',
+                        step: 'theft.card',
+                        playerId: player.id,
+                        message: `${player.name} → ${target.name}: skradziono kartę ${stolenCard.name}`,
+                        payload: {
+                            mode: 'card',
+                            thiefId: player.id,
+                            thiefName: player.name,
+                            victimId: target.id,
+                            victimName: target.name,
+                            cardId: stolenCard.id,
+                            cardName: stolenCard.name,
+                            role: 'summary',
+                        },
+                    });
+                    emitter_1.AuditEmitter.event({
+                        type: 'CARD_REMOVED',
+                        phase: 'RESOLUTION',
+                        step: 'theft.card',
+                        playerId: target.id,
+                        message: `${target.name}: karta ${stolenCard.name} skradziona przez ${player.name}`,
+                        payload: {
+                            cardId: stolenCard.id,
+                            cardName: stolenCard.name,
+                            reason: 'stolen',
+                        },
+                    });
+                    emitter_1.AuditEmitter.event({
+                        type: 'CARD_DRAWN',
+                        phase: 'RESOLUTION',
+                        step: 'theft.card',
+                        playerId: player.id,
+                        message: `${player.name}: otrzymuje skradzioną kartę ${stolenCard.name}`,
+                        payload: {
+                            cardId: stolenCard.id,
+                            cardName: stolenCard.name,
+                            buildingType: stolenCard.buildingType,
+                            buildingCategory: stolenCard.buildingCategory,
+                            buildingValue: stolenCard.buildingValue,
+                            source: 'theft',
+                        },
+                    });
                 }
                 else {
-                    resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.card', `${player.name} → ${target.name}: cel nie ma kart — pominięto`);
+                    emitter_1.AuditEmitter.event({
+                        type: 'PROFESSION_SKIPPED',
+                        phase: 'RESOLUTION',
+                        step: 'theft.card',
+                        playerId: player.id,
+                        message: `${player.name} → ${target.name}: cel nie ma kart — pominięto`,
+                        payload: {
+                            profession: 'thief',
+                            reason: 'target_has_no_cards',
+                            targetId: target.id,
+                        },
+                    });
                 }
             }
         }
@@ -558,24 +1117,67 @@ class RoundEngine {
             if (player.profession !== 'vandal')
                 continue;
             if (player.professionAbilityUsed) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal.skip', `${player.name}: zablokowany przez Sabotażystę — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'vandal.skip',
+                    playerId: player.id,
+                    message: `${player.name}: zablokowany przez Sabotażystę — pominięto`,
+                    payload: { profession: 'vandal', reason: 'ability_blocked' },
+                });
                 continue;
             }
             const playerActions = actions.get(player.id) || [];
             const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
             if (!professionAction || !professionAction.target) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal.skip', `${player.name}: brak akcji lub celu — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'vandal.skip',
+                    playerId: player.id,
+                    message: `${player.name}: brak akcji lub celu — pominięto`,
+                    payload: { profession: 'vandal', reason: 'no_action_or_target' },
+                });
                 continue;
             }
             const target = players.find((p) => p.id === professionAction.target);
             if (!target || target.protected || target.buildings.length === 0) {
-                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal.skip', `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : target.protected ? 'chroniony' : 'bez budynków'} — pominięto`);
+                emitter_1.AuditEmitter.event({
+                    type: 'PROFESSION_SKIPPED',
+                    phase: 'RESOLUTION',
+                    step: 'vandal.skip',
+                    playerId: player.id,
+                    message: `${player.name}: cel ${professionAction.target} ${!target ? 'nie istnieje' : target.protected ? 'chroniony' : 'bez budynków'} — pominięto`,
+                    payload: {
+                        profession: 'vandal',
+                        reason: !target
+                            ? 'target_missing'
+                            : target.protected
+                                ? 'target_protected'
+                                : 'target_has_no_buildings',
+                        targetId: professionAction.target,
+                    },
+                });
                 continue;
             }
             const building = target.buildings.reduce((best, current) => current.value > best.value ? current : best);
             const valueBefore = building.value;
             building.value = Math.max(0, building.value - 2);
-            resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal', `${player.name} → ${target.name}: ${building.type} wartość ${valueBefore}→${building.value}`);
+            emitter_1.AuditEmitter.event({
+                type: 'VANDALISM',
+                phase: 'RESOLUTION',
+                step: 'vandal',
+                playerId: player.id,
+                message: `${player.name} → ${target.name}: ${building.type} wartość ${valueBefore}→${building.value}`,
+                payload: {
+                    targetId: target.id,
+                    targetName: target.name,
+                    buildingId: building.id,
+                    buildingType: building.type,
+                    valueBefore,
+                    valueAfter: building.value,
+                },
+            });
         }
     }
     /**

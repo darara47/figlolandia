@@ -5,6 +5,7 @@ packages:
 allowBuilds:
   '@nestjs/core': false
   '@scarf/scarf': false
+  better-sqlite3: true
 
 ignoredBuiltDependencies:
   - '@scarf/scarf'
@@ -13,3 +14,4 @@ nodeLinker: hoisted
 
 onlyBuiltDependencies:
   - '@nestjs/core'
+  - better-sqlite3

@@ -17,6 +17,7 @@ import {
 import { GameStateManager } from './game.state';
 import { CreateGameParams, JoinGameParams, GameInstance } from './types';
 import { SeededRNG } from '../utils/rng';
+import { GameAudit } from '../audit/GameAudit';
 
 /**
  * Serwis zarządzający lobby - tworzenie gier i dołączanie graczy
@@ -33,7 +34,33 @@ export class LobbyService {
     animationSpeed: 'full',
   };
 
-  constructor(private readonly gameStateManager: GameStateManager) { }
+  constructor(
+    private readonly gameStateManager: GameStateManager,
+    private readonly gameAudit: GameAudit,
+  ) { }
+
+  /** Rejestruje w audycie karty startowe gracza (LOBBY, runda 0). */
+  private auditStartingCards(state: GameState, player: Player): void {
+    for (const card of player.cards) {
+      this.gameAudit.event({
+        gameId: state.gameId,
+        round: 0,
+        type: 'CARD_DRAWN',
+        phase: 'LOBBY',
+        step: 'starting_cards',
+        playerId: player.id,
+        message: `${player.name}: karta startowa ${card.name} (${card.buildingValue})`,
+        payload: {
+          cardId: card.id,
+          cardName: card.name,
+          buildingType: card.buildingType,
+          buildingCategory: card.buildingCategory,
+          buildingValue: card.buildingValue,
+          source: 'lobby',
+        },
+      });
+    }
+  }
 
   /**
    * Tworzy nową grę (z domyślnym config)
@@ -101,6 +128,10 @@ export class LobbyService {
 
     this.gameStateManager.createGame(instance);
     this.gameStateManager.mapPlayerToGame(hostId, gameId);
+
+    this.gameAudit.gameCreated(state);
+    this.gameAudit.playerJoined(state, hostId, params.hostName);
+    this.auditStartingCards(state, host);
 
     return state;
   }
@@ -178,6 +209,9 @@ export class LobbyService {
     state.players.push(newPlayer);
     this.gameStateManager.mapPlayerToGame(params.playerId, gameId);
     this.gameStateManager.updateGameState(gameId, state);
+
+    this.gameAudit.playerJoined(state, newPlayer.id, newPlayer.name);
+    this.auditStartingCards(state, newPlayer);
 
     return state;
   }

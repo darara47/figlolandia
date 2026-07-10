@@ -26,6 +26,7 @@ import { LobbyService } from './lobby.service';
 import { GameService } from './game.service';
 import { GameStateManager } from './game.state';
 import { generatePlayerId } from '@figlolandia/game-core';
+import { GameAudit } from '../audit/GameAudit';
 
 /**
  * WebSocket Gateway dla gry
@@ -56,6 +57,7 @@ export class GameGateway
     private readonly lobbyService: LobbyService,
     private readonly gameService: GameService,
     private readonly gameStateManager: GameStateManager,
+    private readonly gameAudit: GameAudit,
   ) { }
 
   /**
@@ -121,6 +123,23 @@ export class GameGateway
       if (!instance || instance.state.phase !== 'PLANNING') {
         return;
       }
+
+      const planningStatus = this.gameService.getPlanningStatus(gameId);
+      const skippedPlayerIds = instance.state.players
+        .filter((p) => {
+          const status = planningStatus[p.id];
+          return !status || !status.buildConfirmed || !status.abilityConfirmed;
+        })
+        .map((p) => p.id);
+      this.gameAudit.event({
+        gameId,
+        round: instance.state.round,
+        type: 'PLANNING_TIMEOUT',
+        phase: 'PLANNING',
+        step: 'timeout',
+        message: `Timeout fazy PLANNING — pominięci gracze: ${skippedPlayerIds.length}`,
+        payload: { skippedPlayerIds },
+      });
 
       const resolvedState = this.gameService.enterResolutionPhase(gameId, {
         skipIncompletePlayers: true,
@@ -416,6 +435,14 @@ export class GameGateway
         this.logger.warn(
           `SUBMIT_ACTIONS: Gracz ${playerId} próbuje wysłać akcje w fazie ${instance.state.phase}, wymagana faza: PLANNING`,
         );
+        this.gameAudit.invalidAction(
+          payload.gameId,
+          instance.state.round,
+          instance.state.phase,
+          playerId,
+          'SUBMIT_ACTIONS',
+          `wrong_phase:${instance.state.phase}`,
+        );
         throw new Error(`Nie można wysłać akcji w fazie ${instance.state.phase}. Wymagana faza: PLANNING`);
       }
 
@@ -481,6 +508,14 @@ export class GameGateway
         this.logger.warn(
           `CONFIRM_BUILD: Gracz ${playerId} próbuje wysłać akcje w fazie ${instance.state.phase}, wymagana faza: PLANNING`,
         );
+        this.gameAudit.invalidAction(
+          payload.gameId,
+          instance.state.round,
+          instance.state.phase,
+          playerId,
+          'CONFIRM_BUILD',
+          `wrong_phase:${instance.state.phase}`,
+        );
         throw new Error(`Nie można wysłać budowy w fazie ${instance.state.phase}. Wymagana faza: PLANNING`);
       }
 
@@ -538,6 +573,14 @@ export class GameGateway
       if (instance.state.phase !== 'PLANNING') {
         this.logger.warn(
           `CONFIRM_ABILITY: Gracz ${playerId} próbuje wysłać akcje w fazie ${instance.state.phase}, wymagana faza: PLANNING`,
+        );
+        this.gameAudit.invalidAction(
+          payload.gameId,
+          instance.state.round,
+          instance.state.phase,
+          playerId,
+          'CONFIRM_ABILITY',
+          `wrong_phase:${instance.state.phase}`,
         );
         throw new Error(`Nie można wysłać zdolności w fazie ${instance.state.phase}. Wymagana faza: PLANNING`);
       }

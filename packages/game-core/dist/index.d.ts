@@ -83,9 +83,19 @@ export declare const PROFESSION_DATA: Record<Profession, {
     name: string;
     category: string;
 }>;
-export { ResolutionDebug, isResolutionDebugEnabled } from './resolution-debug';
+export { AuditEmitter } from './audit/emitter';
+export type { AuditEventPayloadMap, AuditEventType, AuditEventPayload, AuditEventInput, AuditEventRecord, AuditGoldChangeInput, AuditGoldChangeRecord, AuditSnapshotInput, AuditSnapshotRecord, AuditSink, AuditPlayerBrief, AuditResolutionPlayerBrief, AuditFlagsPlayerBrief, SnapshotLabel, } from './audit/types';
 export { RESOLUTION_TURN_MS, RESOLUTION_BUILD_AT, RESOLUTION_PROFESSION_AT, RESOLUTION_TURN_GAP_MS, GOLD_FLOAT_MS, goldFloatTotalMs, getResolutionTurnDurationMs, getResolutionAdvanceDelayMs, UI_ANIMATION_MS, } from './animationTiming';
-export type { GoldLedgerEntry, ResolutionDebugEvent, ResolutionDebugPhase } from './resolution-debug';
+/**
+ * Minimalny kontrakt RNG wymagany przez RoundEngine.
+ * Backendowy SeededRNG spełnia go strukturalnie.
+ */
+export interface RandomSource {
+    random(): number;
+    randomInt(min: number, max: number): number;
+    randomChoice<T>(items: T[]): T;
+    shuffle<T>(items: T[]): T[];
+}
 export declare class RoundEngine {
     /**
      * Rozstrzyga akcje graczy w fazie RESOLUTION
@@ -109,7 +119,7 @@ export declare class RoundEngine {
      * @param state Stan gry
      * @param rng SeededRNG - musi być przekazany z backendu
      */
-    static resolveRandomEvents(players: Player[], state: GameState, rng: any): void;
+    static resolveRandomEvents(players: Player[], state: GameState, rng: RandomSource): void;
     private static resolveBuildings;
     private static deferBuildAction;
     private static executeBuildActions;

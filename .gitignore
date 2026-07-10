@@ -1,5 +1,10 @@
 node_modules
 
+# Game Audit System (runtime SQLite)
+logs/*.sqlite
+logs/*.sqlite-wal
+logs/*.sqlite-shm
+
 # Staging / deploy secrets & runtime
 deploy/config/config.local.env
 deploy/logs/
