@@ -516,6 +516,10 @@ class RoundEngine {
         for (const player of players) {
             if (player.profession !== 'thief')
                 continue;
+            if (player.professionAbilityUsed) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'theft.skip', `${player.name}: zablokowany przez Sabotażystę — pominięto`);
+                continue;
+            }
             const playerActions = actions.get(player.id) || [];
             const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
             if (!professionAction || !professionAction.target) {
@@ -553,6 +557,10 @@ class RoundEngine {
         for (const player of players) {
             if (player.profession !== 'vandal')
                 continue;
+            if (player.professionAbilityUsed) {
+                resolution_debug_1.ResolutionDebug.log('RESOLUTION', 'vandal.skip', `${player.name}: zablokowany przez Sabotażystę — pominięto`);
+                continue;
+            }
             const playerActions = actions.get(player.id) || [];
             const professionAction = playerActions.find((a) => a.type === 'use_profession' && a.professionAbility);
             if (!professionAction || !professionAction.target) {

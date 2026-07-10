@@ -14,6 +14,7 @@ W PLANNING: `use_profession` + `target` (ID gracza).
 ## Interakcje
 
 - Nie działa na graczy chronionych przez Dyplomatę
+- Nie działa, gdy Sabotażysta zablokował zdolność Wandala w tej rundzie
 - Cel musi mieć co najmniej jeden budynek
 
 ## Implementacja

@@ -972,6 +972,15 @@ export class RoundEngine {
     for (const player of players) {
       if (player.profession !== 'thief') continue;
 
+      if (player.professionAbilityUsed) {
+        ResolutionDebug.log(
+          'RESOLUTION',
+          'theft.skip',
+          `${player.name}: zablokowany przez Sabotażystę — pominięto`,
+        );
+        continue;
+      }
+
       const playerActions = actions.get(player.id) || [];
       const professionAction = playerActions.find(
         (a) => a.type === 'use_profession' && a.professionAbility
@@ -1046,6 +1055,15 @@ export class RoundEngine {
     // Wandal: niszczy wartość budynku przeciwnika o 2
     for (const player of players) {
       if (player.profession !== 'vandal') continue;
+
+      if (player.professionAbilityUsed) {
+        ResolutionDebug.log(
+          'RESOLUTION',
+          'vandal.skip',
+          `${player.name}: zablokowany przez Sabotażystę — pominięto`,
+        );
+        continue;
+      }
 
       const playerActions = actions.get(player.id) || [];
       const professionAction = playerActions.find(

@@ -44,7 +44,7 @@ Zdolności pasywne przy budowie (Łowca okazji, Budowlaniec) rozstrzygane są w 
 
 ### 3. Niszczenie (`resolveDestruction`)
 
-**Wandal** wskazuje gracza i obniża wartość jego **najcenniejszego** budynku o 2 (minimum 0). Nie działa na chronionych.
+**Wandal** wskazuje gracza i obniża wartość jego **najcenniejszego** budynku o 2 (minimum 0). Nie działa na chronionych ani gdy Sabotażysta zablokował zdolność Wandala (`professionAbilityUsed`).
 
 ### 4. Budowy (`resolveBuildings`)
 
@@ -66,7 +66,7 @@ Budowa jest pomijana, jeśli gracz nie ma wystarczająco złota.
 - **Złoto** — do 2 monet, lub
 - **Karta** — losowa karta z ręki celu
 
-Nie działa na chronionych.
+Nie działa na chronionych ani gdy Sabotażysta zablokował zdolność Złodzieja (`professionAbilityUsed`).
 
 ### 6. Efekty końcowe (`applyEndOfRoundAbilities`)
 

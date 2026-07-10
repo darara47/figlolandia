@@ -246,6 +246,10 @@ export class NarrativeService {
         const theftType = profAction.theftTarget || 'gold';
         const stolen =
           theftType === 'gold' ? Math.max(0, beforeTarget.gold - target.gold) : undefined;
+        const cardStolen =
+          theftType === 'card' && target.cards.length < beforeTarget.cards.length;
+        if (theftType === 'gold' && stolen === 0) return null;
+        if (theftType === 'card' && !cardStolen) return null;
         return {
           type: 'theft',
           playerId: player.id,
@@ -263,8 +267,16 @@ export class NarrativeService {
 
       case 'vandal': {
         if (!profAction.target) return null;
+        const beforeTarget = beforeState.players.find((p) => p.id === profAction.target);
         const target = afterState.players.find((p) => p.id === profAction.target);
-        if (!target) return null;
+        if (!target || !beforeTarget) return null;
+
+        const destructionHappened = beforeTarget.buildings.some((beforeBuilding) => {
+          const afterBuilding = target.buildings.find((b) => b.id === beforeBuilding.id);
+          return afterBuilding && afterBuilding.value < beforeBuilding.value;
+        });
+        if (!destructionHappened) return null;
+
         return {
           type: 'vandal',
           playerId: player.id,
@@ -349,7 +361,7 @@ export class NarrativeService {
       case 'saboteur': {
         if (!profAction.target) return null;
         const target = afterState.players.find((p) => p.id === profAction.target);
-        if (!target) return null;
+        if (!target || target.protected || !target.professionAbilityUsed) return null;
         return {
           type: 'saboteur',
           playerId: player.id,
