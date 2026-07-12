@@ -76,6 +76,7 @@ function RootLayoutNav() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="lobby" options={{ headerShown: false }} />
         <Stack.Screen name="game/[gameId]" options={{ headerShown: false }} />
+        <Stack.Screen name="debug" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>

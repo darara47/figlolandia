@@ -105,6 +105,7 @@ export default function DebugGameListScreen() {
           keyExtractor={(item) => item.game.gameId}
           renderItem={({ item }) => <GameListItem item={item} />}
           showsVerticalScrollIndicator={false}
+          style={{ flex: 1 }}
         />
       ) : (
         <EmptyState message="Brak gier w audycie" />
