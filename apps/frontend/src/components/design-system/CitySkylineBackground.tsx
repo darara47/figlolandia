@@ -16,7 +16,10 @@ const silhouettes = [
 ];
 
 export const CitySkylineBackground = () => (
-  <View className="absolute bottom-0 left-0 right-0 opacity-30" pointerEvents="none">
+  <View
+    className="absolute bottom-0 left-0 right-0 opacity-30"
+    style={{ pointerEvents: 'none' }}
+  >
     <Svg width="100%" height={120} viewBox="0 0 360 120" preserveAspectRatio="xMidYMax slice">
       {silhouettes.map((s, i) => (
         <Rect

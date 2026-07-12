@@ -21,17 +21,14 @@ export default function HomeScreen() {
   const [playerName, setPlayerName] = useState('');
   const [gamePin, setGamePin] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const { disconnect, setEventHandlers } = useSocketStore();
-  const { setGame, reset: resetLobby } = useLobbyStore();
-  const { reset: resetGame } = useGameStore();
+  const { setGame } = useLobbyStore();
 
   useEffect(() => {
-    setEventHandlers({});
-    disconnect();
-    resetLobby();
-    resetGame();
-  }, [disconnect, resetGame, resetLobby, setEventHandlers]);
+    useSocketStore.getState().setEventHandlers({});
+    useSocketStore.getState().disconnect();
+    useLobbyStore.getState().reset();
+    useGameStore.getState().reset();
+  }, []);
 
   const handleCreateGame = async () => {
     if (!playerName.trim()) {
@@ -90,10 +87,10 @@ export default function HomeScreen() {
     return (
       <Screen centered style={styles.homeScreen}>
         <CitySkylineBackground />
-        <Text variant="display-xl" style={styles.homeTitle}>
+        <Text variant="display-xl" style={[styles.homeTitle, styles.homeContent]}>
           Figlolandia
         </Text>
-        <Stack gap={16} align="stretch" style={styles.homeButtons}>
+        <Stack gap={16} align="stretch" style={[styles.homeButtons, styles.homeContent]}>
           <Button variant="primary" size="lg" onPress={() => setMode('create')}>
             Stwórz grę
           </Button>
@@ -215,6 +212,9 @@ const styles = StyleSheet.create({
   homeTitle: {
     marginBottom: 32,
     textAlign: 'center',
+  },
+  homeContent: {
+    zIndex: 1,
   },
   homeButtons: {
     ...centeredForm,

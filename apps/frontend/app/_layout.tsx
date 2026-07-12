@@ -9,6 +9,7 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import '../global.css';
 import '@/src/nativewind-setup';
@@ -23,7 +24,9 @@ export const unstable_settings = {
   initialRouteName: 'index',
 };
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Na webie API splash screen może być niedostępne — ignoruj.
+});
 
 const figlolandiaTheme = {
   ...DarkTheme,
@@ -52,12 +55,14 @@ export default function RootLayout() {
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    if (Platform.OS === 'web' || loaded) {
+      SplashScreen.hideAsync().catch(() => { });
     }
   }, [loaded]);
 
-  if (!loaded) {
+  // Na webie SSR renderuje UI zanim useFonts zwróci loaded=true.
+  // return null psuje hydrację — zostaje martwy HTML z kursorem, bez handlerów.
+  if (!loaded && Platform.OS !== 'web') {
     return null;
   }
 

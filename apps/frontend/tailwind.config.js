@@ -42,6 +42,16 @@ module.exports = {
           administration: '#A66BFF',
           entertainment: '#2DD4BF',
         },
+        severity: {
+          info: '#4C8DFF',
+          warning: '#FFB020',
+          error: '#FF4D6D',
+          critical: '#C81E4A',
+        },
+        verify: {
+          ok: '#34D399',
+          mismatch: '#FF4D6D',
+        },
       },
       fontFamily: {
         display: ['Baloo2_700Bold', 'System'],

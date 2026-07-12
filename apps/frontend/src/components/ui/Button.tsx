@@ -1,15 +1,25 @@
-import { ActivityIndicator, Pressable, PressableProps, StyleProp, View, ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  PressableProps,
+  StyleProp,
+  TouchableOpacity,
+  View,
+  ViewStyle,
+} from 'react-native';
 import { cn } from '@/src/utils/cn';
 import { colors, radius } from '@/src/theme/tokens';
 import { Text } from './Text';
 
-interface ButtonProps extends Omit<PressableProps, 'style'> {
+interface ButtonProps extends Omit<PressableProps, 'style' | 'delayLongPress'> {
   variant?: 'primary' | 'secondary' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   children: React.ReactNode;
   className?: string;
   style?: StyleProp<ViewStyle>;
   loading?: boolean;
+  delayLongPress?: number;
 }
 
 const variantStyles = {
@@ -46,57 +56,79 @@ export const Button = ({
   disabled,
   loading = false,
   style,
+  onPress,
   ...props
 }: ButtonProps) => {
   const isDisabled = disabled || loading;
+  const sharedStyle = [
+    {
+      borderRadius: radius.pill,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      ...variantStyles[variant],
+      ...sizeStyles[size],
+      opacity: isDisabled ? 0.6 : 1,
+      backgroundColor: isDisabled ? colors.bg.hover : variantStyles[variant].backgroundColor,
+    },
+    style,
+  ];
+
+  const label = loading ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <ActivityIndicator
+        size="small"
+        color={variant === 'secondary' ? colors.text.secondary : '#FFFFFF'}
+      />
+      <Text
+        variant="body"
+        style={{
+          color: colors.text.tertiary,
+          fontFamily: 'PlusJakartaSans_700Bold',
+          fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
+        }}
+      >
+        {children}
+      </Text>
+    </View>
+  ) : (
+    <Text
+      variant="body"
+      style={{
+        color: isDisabled ? colors.text.tertiary : textColors[variant],
+        fontFamily: 'PlusJakartaSans_700Bold',
+        fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
+      }}
+    >
+      {children}
+    </Text>
+  );
+
+  if (Platform.OS === 'web') {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={sharedStyle}
+        disabled={isDisabled}
+        onPress={onPress ?? undefined}
+        accessibilityRole="button"
+        testID={props.testID}
+        accessibilityLabel={props.accessibilityLabel}
+      >
+        {label}
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <Pressable
       className={cn(className)}
-      style={[
-        {
-          borderRadius: radius.pill,
-          alignItems: 'center',
-          justifyContent: 'center',
-          ...variantStyles[variant],
-          ...sizeStyles[size],
-          opacity: isDisabled ? 0.6 : 1,
-          backgroundColor: isDisabled ? colors.bg.hover : variantStyles[variant].backgroundColor,
-        },
-        style,
-      ]}
+      style={sharedStyle}
       disabled={isDisabled}
+      onPress={onPress}
+      accessibilityRole="button"
       {...props}
     >
-      {loading ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <ActivityIndicator
-            size="small"
-            color={variant === 'secondary' ? colors.text.secondary : '#FFFFFF'}
-          />
-          <Text
-            variant="body"
-            style={{
-              color: colors.text.tertiary,
-              fontFamily: 'PlusJakartaSans_700Bold',
-              fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
-            }}
-          >
-            {children}
-          </Text>
-        </View>
-      ) : (
-        <Text
-          variant="body"
-          style={{
-            color: isDisabled ? colors.text.tertiary : textColors[variant],
-            fontFamily: 'PlusJakartaSans_700Bold',
-            fontSize: size === 'sm' ? 14 : size === 'lg' ? 18 : 16,
-          }}
-        >
-          {children}
-        </Text>
-      )}
+      {label}
     </Pressable>
   );
 };
